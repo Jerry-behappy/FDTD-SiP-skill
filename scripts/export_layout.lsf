@@ -1,0 +1,244 @@
+closeall;
+clear;
+clearfunctions;
+cd(filedirectory(currentscriptname));
+
+###############################################################################
+# 用户参数区——需要修改的主要参数全部集中在这里
+###############################################################################
+
+# 待导出的 Lumerical 工程。
+project_filename = "scan_working_layout.fsp";
+
+# 输出文件自动由工程名生成：
+#   scan_working_layout.fsp -> scan_working_layout.gds
+# 因此切换工程时通常只需要修改上面的 project_filename。
+gds_filename = filebasename(project_filename) + ".gds";
+
+# GDS 顶层 cell 名称。建议仅使用英文字母、数字和下划线。
+gds_cell_name = "TOP";
+
+# true：允许覆盖同名 GDS；false：若文件已存在就报错停止。
+# 默认输出名跟随工程文件名；
+# 为了让脚本能够反复一键运行，这里默认设为 true。若输出文件很重要，请改为 false。
+allow_overwrite = true;
+
+# 曲线弦高误差目标（nm）。polystencil 会按局部曲率自适应增加顶点：
+# 半径越大或曲率越高的圆弧自动使用更多线段，而不是固定顶点数。
+# 0.25 nm 适用于聚焦光栅等需要平滑 GDS 弯曲边界的版图；导出前仍检查
+# 每个 BOUNDARY 不超过 gdsaddpoly 的 8190 顶点上限。
+curve_chord_tolerance_nm = 0.25;
+if (curve_chord_tolerance_nm <= 0) {
+    error("curve_chord_tolerance_nm 必须为正数。");
+}
+curve_chord_tol = curve_chord_tolerance_nm*1e-9;
+
+# 是否打印每一层提取到的 polygon 数量。
+verbose = true;
+
+# 版图层数量。当前只导出一个层；需要多层时修改 cell 数量并继续添加 layer_2。
+layer_def = cell(1);
+
+# 第 1 个版图层。
+layer_1 = struct;
+
+# 截面高度，单位 m。
+layer_1.z = 0.09e-6;
+
+# 需要提取的 Lumerical 材料名。
+layer_1.material = "Si (Silicon) - Palik";
+
+# GDS 的 "layer:datatype"。
+layer_1.gds_layer = "1:0";
+
+# 日志中的层说明，不影响导出的几何。
+layer_1.description = "z=+0.09 um 处的 Si 器件截面；按项目工艺解释全刻蚀或分层Si版图";
+layer_def{1} = layer_1;
+
+# 多层导出示例（默认不启用）：
+#   1. 把上面的 cell(1) 改为 cell(2)；
+#   2. 取消下面代码的注释；
+#   3. 根据实际对象名称与工艺层号修改参数。
+#
+# layer_2 = struct;
+# layer_2.z = 0.09e-6;
+# layer_2.material = "SiO2 (Glass) - Palik";
+# layer_2.gds_layer = "2:0";
+# layer_2.description = "浅刻蚀开口层";
+# layer_def{2} = layer_2;
+
+###############################################################################
+# 参数区结束。下面是导出主体，日常使用通常不需要修改。
+###############################################################################
+
+###############################################################################
+# export_layout.lsf
+#
+# 目标：只运行这一份可读的 LSF 文件，就把 FSP 中指定材料的二维截面导出为 GDS。
+# 本脚本不依赖 GDSexport_core.lsfx，也不依赖 GDS_auto_export.lsf。
+#
+# 核心流程：
+#   1. load() 打开待导出的 FSP；
+#   2. polystencil() 在指定 z 平面计算指定材料的二维轮廓；
+#   3. gdsopen/gdsbegincell/gdsaddpoly/gdsendcell/gdsclose 写出 GDSII。
+#
+# 适用边界：
+#   GDS 的单个 BOUNDARY 不能原生表达“外轮廓中带孔”的多轮廓 polygon。
+#   因此脚本会在写文件前检查结果；遇到带孔 polygon 时立即报错，避免输出
+#   几何含义错误的文件。
+#
+# 安全性：
+#   本脚本只读取 FSP 几何，不运行仿真、不调用 runsetup、不保存或覆盖 FSP。
+#   输出 GDS 是否覆盖由 allow_overwrite 显式控制。
+###############################################################################
+
+###############################################################################
+# 输入检查与工程加载
+###############################################################################
+
+if (!fileexists(project_filename)) {
+    error("找不到待导出的 FSP：" + project_filename);
+}
+
+if (fileexists(gds_filename) & (allow_overwrite == false)) {
+    error("输出 GDS 已存在；请备份/改名，或把 allow_overwrite 改为 true：" + gds_filename);
+}
+
+?"正在加载工程：" + project_filename;
+load(project_filename);
+
+###############################################################################
+# 先提取并审计所有截面，再打开 GDS 文件
+#
+# 先审计、后写文件有两个好处：
+#   1. 如果材料名或 z 高度写错，可在创建空 GDS 前就停止；
+#   2. 如果出现带孔的多轮廓 polygon，可在覆盖旧文件前安全报错。
+###############################################################################
+
+slice_cache = cell(length(layer_def));
+total_polygon_count = 0;
+
+for (layer_index = 1:length(layer_def)) {
+
+    current_layer = layer_def{layer_index};
+
+    # polystencil 返回三层 cell：
+    #   第 1 层：不同 z 值；本脚本每次只传一个 z，所以只取 {1}；
+    #   第 2 层：该 z 截面上的 polygon；
+    #   第 3 层：每个 polygon 的外轮廓及可能存在的内孔轮廓。
+    stencil_result = polystencil({
+        "material": current_layer.material,
+
+        # polystencil 要求 partialname 字段必须存在且必须是字符串。
+        # 空字符串表示不按对象名称筛选，只使用 material 和 z 提取轮廓。
+        "partialname": "",
+
+        "z": [current_layer.z],
+        "options": {
+            "curve_chord_tol": curve_chord_tol,
+            "ignore_disabled": true
+        }
+    });
+
+    polygons_at_z = stencil_result{1};
+    polygon_count = length(polygons_at_z);
+
+    if (polygon_count == 0) {
+        error(
+            "第 " + num2str(layer_index) + " 层没有提取到 polygon。" +
+            "请检查 material 和 z：" + current_layer.description
+        );
+    }
+
+    # 检查每个 polygon 是否只有一个简单轮廓。
+    # 如果 contour_count>1，通常表示存在内孔；直接逐轮廓写 GDS 会把孔填实，
+    # 所以必须停止，而不能为了“跑完”而输出一个几何含义错误的文件。
+    for (polygon_index = 1:polygon_count) {
+        contour_list = polygons_at_z{polygon_index};
+        contour_count = length(contour_list);
+
+        if (contour_count != 1) {
+            error(
+                "第 " + num2str(layer_index) + " 层的 polygon " +
+                num2str(polygon_index) + " 含有 " + num2str(contour_count) +
+                " 条轮廓（可能带孔），单个 gdsaddpoly 不能安全表示。"
+            );
+        }
+
+        vertices = contour_list{1};
+        vertex_count = length(vertices(:,1));
+
+        if (vertex_count < 3) {
+            error("发现少于 3 个顶点的退化 polygon，已停止导出。");
+        }
+
+        # GDSII BOUNDARY 的顶点数量上限为 8190。
+        if (vertex_count > 8190) {
+            error(
+                "polygon 顶点数为 " + num2str(vertex_count) +
+                "，超过 gdsaddpoly 的 8190 点上限；请增大 curve_chord_tol。"
+            );
+        }
+    }
+
+    slice_cache{layer_index} = polygons_at_z;
+    total_polygon_count = total_polygon_count + polygon_count;
+
+    if (verbose) {
+        ?"层 " + current_layer.gds_layer + "：" +
+         current_layer.description + "；polygon 数 = " + num2str(polygon_count);
+    }
+}
+
+###############################################################################
+# 写入 GDSII
+###############################################################################
+
+# gdsopen 默认使用微米 user unit 和 0.1 nm database unit。
+# gdsaddpoly 接收的顶点坐标仍然以“米”为单位，无需手动乘 1e6。
+gds_handle = gdsopen(gds_filename);
+
+# GDS 中的所有 polygon 必须位于 cell 内，所以要先 begin，最后再 end。
+gdsbegincell(gds_handle, gds_cell_name);
+
+for (layer_index = 1:length(layer_def)) {
+    current_layer = layer_def{layer_index};
+    polygons_at_z = slice_cache{layer_index};
+
+    for (polygon_index = 1:length(polygons_at_z)) {
+        vertices = polygons_at_z{polygon_index}{1};
+
+        # gdsaddpoly 会自动闭合首尾点，因此 vertices 的最后一行不应重复第一行。
+        vertex_count = length(vertices(:,1));
+        if (vertex_count > 3) {
+            same_x = abs(vertices(1,1)-vertices(vertex_count,1)) < 1e-15;
+            same_y = abs(vertices(1,2)-vertices(vertex_count,2)) < 1e-15;
+            if (same_x & same_y) {
+                vertices = vertices(1:(vertex_count-1),1:2);
+            }
+        }
+
+        gdsaddpoly(gds_handle, current_layer.gds_layer, vertices);
+    }
+}
+
+gdsendcell(gds_handle);
+
+# 必须显式关闭文件流，确保 GDS 的结束记录完整写入磁盘。
+gdsclose(gds_handle);
+
+###############################################################################
+# 完成信息
+###############################################################################
+
+?"------------------------------------------------------------";
+?"GDS 导出完成";
+?"源工程：" + project_filename;
+?"输出文件：" + gds_filename;
+?"顶层 cell：" + gds_cell_name;
+?"总 polygon 数：" + num2str(total_polygon_count);
+?"------------------------------------------------------------";
+
+# 如果只在命令行以 -nw -run 方式批处理，并希望完成后自动退出，可取消下一行
+# 的注释；在 GUI 中学习和查看版图时建议保持注释状态。
+# exit;

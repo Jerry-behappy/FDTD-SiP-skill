@@ -1,0 +1,184 @@
+---
+name: jnu-mwp-fdtd
+description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic devices at JNU MWP. Use for FDTD, MODE/FDE, EME, varFDTD, parameterized structure groups, native Optimization, GDS reconstruction/export, GPU execution, broadband results, tapers, bends, MMI/PBS, couplers, grating couplers, mode converters, and related simulation debugging or cleanup through PyLumerical MCP.
+---
+
+# JNU MWP — 硅光器件通用仿真规范
+
+## 核心原则
+
+- 使用中文回复，技术术语保留英文；建模与controller脚本使用UTF-8并包含可维护的中文注释。
+- 通过PyLumerical MCP控制Lumerical，不直接实例化 `lumapi`。把可复现的长流程保存为项目脚本，不让关键逻辑只存在于一次性snippet。
+- 先需求确认和Layout审计，再preflight、求解、结果重开和清理；每阶段使用独立状态与manifest。
+- `run()`、`runsweep()`/`emesweep()` 和 `switchtolayout()` 分别需要明确授权。不得把一次运行授权扩展到其他求解或丢弃结果。
+- 不发明材料、尺寸、边界、mesh、模式数或优化范围；能从输入文件发现的先审计，仍有高影响歧义时再询问用户。
+- 用参数化structure group或可维护polygon生成器表示待优化器件；GDS可作真值和只读对照，不作为不可编辑的优化主体。
+- 不把单档mesh、单一basis-mode数或单一纵向离散称为已收敛；报告准确的验证层级。
+- 用实际结果、日志和重开证据证明成功，不以配置值、进程退出码或文件存在代替结果验收。
+
+## 专用参考入口
+
+- 光栅耦合器GDS复现、周期定义、Gaussian对光、原生Optimization、3D GPU宽带和GDS交付：完整读取 [references/grating-coupler-optimization.md](references/grating-coupler-optimization.md)。
+- 参数化欧拉/一般变曲率弯曲、FDE/varFDTD/EME/FDTD分工、曲率离散、S矩阵和弯曲优化：完整读取 [references/eme-euler-bend.md](references/eme-euler-bend.md)。欧拉专用参数和流程只维护在该文件，主skill不复制。
+- 从最终Layout FSP导出曲线GDS：完整读取并复用 [scripts/export_layout.lsf](scripts/export_layout.lsf)，只改顶部参数区，不重写主体。
+
+## PyLumerical MCP调用规范
+
+1. 写任何Lumerical Python前调用 `get_guidelines_for("workflow")` 和 `get_guidelines_for("pic")`。
+2. 按产品补充guidelines：
+   - FDTD/varFDTD：`fdtd_workflow`，并按需读取geometry、materials、sources/monitors、run/results、mesh/convergence。
+   - MODE FDE：`mode_fde_workflow`；结果提取再读 `mode_fde_results`。
+   - MODE EME：`mode_eme_workflow`；扫描再读 `sweeps` 或 `nested_sweeps`。
+3. 先 `list_sessions`；复用产品和文件均匹配的会话，否则 `open_session`。任务结束保存后 `close_session`，最终确认会话列表为空。
+4. 用 `execute_python_code` 分阶段执行，从 `_lum_get(session_name)` 取得句柄。多行代码使用 `exec(compile(code,label,"exec"))` 整体提交。
+5. 结构化返回使用 `_lum_print_json(...)`；大数组先降维或写入项目文件，不注入对话上下文。
+6. 每个MCP envelope检查 `success=true` 且没有 `error`、`timed_out` 或意外 `retained`。
+7. `restart_session` 会销毁所有live handles和未保存状态，只在确认会话失效且已保存可恢复文件后使用。
+
+PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE FDE/EME在本机v251使用CPU；3D FDTD GPU必须显式选择GPU资源并验证。
+
+## 标准工作流
+
+1. **定义目标**：器件功能、输入/输出模式、偏振、中心波长与带宽、材料层叠、制造约束、FOM、计算资源和验收阈值。
+2. **审计输入**：区分已知参数、输入文件真值、论文公开值、本地假设和待用户确认项；记录坐标系、单位、端口和传播方向。
+3. **选择求解器**：根据器件物理、长度、辐射和扫描规模选择FDE、varFDTD、EME或3D FDTD，并定义最终交叉验证层级。
+4. **参数化Layout**：建立材料层叠、器件几何、直波导、source/ports、monitor和边界；保存无结果的基线工程。
+5. **运行setup审计**：读取实际子对象和全局坐标，验证连续性、自交、最小特征、材料、mesh order、端口/source和边界。
+6. **确定性基线**：获得运行授权后先运行中心波长或低成本基线，验证模式、传播方向、归一化和FOM。
+7. **扫描或优化**：使用用户确认的变量、范围、约束、算法和停止条件；原子保存state/history与全局最佳。
+8. **独立复验**：从干净Layout应用最佳参数独立运行；边界最优标记为 `boundary-best`，不自动扩大范围。
+9. **高精度/宽带验证**：使用独立工程完成mesh、mode/cell或波长验证；未经多档比较不声称收敛。
+10. **重开与交付**：从独立会话读取原生结果、生成数据与图、保存SHA256；分别保留不可变pre-run快照、运行工作副本和Analysis工程，确认可重开后再按授权清理。
+
+## 求解器选择
+
+| 求解器 | 优先场景 | 主要限制 |
+|---|---|---|
+| MODE FDE/FEEM | 横截面模式、`neff/ng`、偏振、局部弯曲模式 | 不代替完整器件传播与散射 |
+| varFDTD | 近似平面器件快速初筛、低成本参数搜索 | 必须用更高保真求解器验证关键结论 |
+| MODE EME | 长taper、MMI、方向耦合器、模式转换器、变曲率弯曲、长度扫描 | 强辐射、强反射或复杂垂直散射需FDTD验证 |
+| 3D FDTD | 强散射、反射、辐射、光栅、紧凑三维结构和最终验证 | 计算与显存成本最高 |
+
+先用低成本工具缩小参数空间，再用与目标物理匹配的高保真工具验证；不得把不同求解器结果混称为同一收敛序列。
+
+## 参数化建模与几何审计
+
+- 顶层controller管理材料、全局尺寸、求解参数和优化变量；structure group只重建材料几何，不读取仿真结果。
+- 每次setup先清理该结构组的旧子对象，再按确定顺序重建；对象名、参数名、结果字段使用一致的物理语义。
+- 直接用方程和参数范围保证单调性、连接和最小间隔；避免用clamp把不同非法候选映射为同一几何。
+- 输入/输出直波导延伸穿过相关PML，port/source和monitor放在均匀直波导或均匀介质内。FDTD边界不要无必要地进入高折射率substrate。
+- 曲线使用基于弦高误差的自适应离散；审计实际最大弦高、顶点数、切线连续性和自交。
+- 每次参数变化后执行setup并读取实际全局坐标，不只检查user property。
+
+### SOI基础层叠
+
+- Si芯层、BOX、top cladding和可选substrate使用用户给定、PDK或输入文件审计得到的工艺值；禁止把某次工程厚度写成通用默认值。
+- 以Si芯层中心 `z_si` 和厚度 `h_si` 定义 `si_z_min=z_si-h_si/2`、`si_z_max=z_si+h_si/2`。BOX连续占据 `[si_z_min-h_box, si_z_min]`；若建substrate，其顶面与BOX底面相接。
+- top cladding从 `si_z_min` 连续延伸到项目定义的上边界，并在横向覆盖器件与求解区余量。它应包围Si并填充全刻蚀槽，不能在Si侧壁、槽底或BOX顶面留下非设计空气缝。
+- top cladding的 `graphical rendering` 中 `alpha` 默认设为 `0.2`；仍需通过材料、mesh order和index截面验证物理结构，不能把透明度当作材料证据。
+- 浅刻蚀使用“连续残余slab + 上层未刻蚀Si”或等价的显式差集；全刻蚀槽贯穿完整Si器件层；多刻蚀深度分别建立各层边界。不得用错误的对象优先级把残余slab意外清空。
+- FDTD若无需substrate，z-min留在BOX内部并记录剩余BOX厚度；若包含substrate，则明确材料、厚度、边界距离及其对泄漏/反射的影响。
+
+### Subtract、刻蚀与材料替换
+
+- `subtract`表示“从基体中移除刻蚀区域”的物理语义，不假设存在通用的 `subtract()` LSF命令。按项目选择一种实现并写入manifest：直接生成差集后的Si polygon、使用Layer Builder的布尔/工艺层，或用重叠的etch/background对象替换Si。
+- 参数化器件优先直接生成最终保留的Si几何；这样制造约束、最小线宽和GDS导出共享同一真值。复杂孔洞必须保留内外环方向/孔洞语义，不能用自交polygon伪造差集。
+- 采用重叠材料实现刻蚀时，etch/replacement对象的材料必须等于刻蚀后真实填充介质，并且mesh-order优先级严格高于Si。背景不是空气时，禁止沿用默认 `n=1` etch材料。
+- 普通top cladding不是etch mask：它与Si重叠时必须由Si胜出，仅在槽和Si外部填充。除非计划明确要求材料替换，不得让top cladding切掉Si。
+- 2D对象始终优先于3D对象；需要在2D材料中开孔时，应直接构造带孔2D几何，不能依赖3D刻蚀对象覆盖。
+
+### Mesh order硬规范
+
+- 数字越小优先级越高。不同材料相交时不得使用相同mesh order，也不得依赖object tree先后顺序决定物理几何。
+- 每个显式材料对象先设置 `override mesh order from material database=1`，再设置并回读 `mesh order`。GUI `alpha` 只影响显示，不能作为材料或刻蚀证据。
+- 推荐起始约定为：Si器件 `2`，BOX/substrate `3`，top cladding `4`；明确的etch/replacement对象必须优先于Si（常用 `1`）。这是重叠解析约定，不是不可更改的材料常数；若项目修改，必须保持相对优先级并记录理由。
+- `runsetup()`后逐对象/子对象回读材料、override状态、mesh order和全局bbox，并用index monitor在代表性x/y/z截面确认求解器实际看到的Si、刻蚀槽、BOX和top cladding。显示图或对象属性本身不能替代该检查。
+
+## 模式、source、port与monitor
+
+- 按物理属性识别模式：偏振比例、`neff`、confinement和场型；不永久依赖raw mode序号。
+- **TE0 动态识别与选择硬性检查**：不得把 `mode 1`、`mode 2` 或任一固定 raw mode 序号永久写成 TE0。获得横截面求模授权后，FDE 用 `findmodes()`，EME 对每个 port 分别更新其 port modes；这类授权只允许横截面 mode solver，不自动授权 EME propagation、`run()`、`emesweep()` 或长度扫描。逐个候选回读与当前传播轴定义一致的 `TE polarization fraction`、复数 `neff`、loss、目标芯层 confinement/场分布和横向节点数；若 EME port 只返回 mode profiles，则按 MODE 原生定义从场重算，例如 x 方向传播使用 `∫|Ey|²dydz / ∫(|Ey|²+|Ez|²)dydz`，不得以单点场值或箭头方向代替。先排除 `Re(neff)` 不高于背景折射率数值容差、场不局域在目标芯层或辐射/包层模式，再在基阶无横向节点候选中选择 TE 占优且 TE fraction 最高的模式；强偏振自动选择时 TE fraction 应高于 TM fraction 并优先达到 80%，否则标记为偏振歧义并停止自动映射。双芯 FDE 必须识别同一 TE0 家族的两个偶/奇超模，不能只取单个最高 `neff` 模；EME 的输入与每个输出 port 必须各自独立求模和判断，禁止把一个 port 的 raw mode 序号复制给其他 port。保存并在独立重开后复核每个选择的 port/FDE 名称、trial modes、raw mode 序号、TE fraction、`neff`、场/约束判据和最终选择规则。
+- 需要逐模激励时每次只启用一个输入source，并同步更新输入/输出mode expansion或port模式映射。
+- EME port定义模式边界，不是FDTD光源；FDTD mode source、Gaussian source和EME port不能混用语义。
+- **FDTD Port频率轮廓硬规范**：建立FDTD Ports后，默认对所有参与激励或结果提取的输入/输出Port分别显式设置 `frequency dependent profile=0`，并在保存前及独立重开后从每个准确对象路径（例如 `FDTD::ports::<port_name>`）逐一回读为 `0`。只检查source Port不算通过。只有宽带模式色散、截面变化或基线证据表明单一中心频率轮廓不足时，才允许为特定Port启用该选项；启用时必须记录Port名称、理由、`number of field profile samples`、额外计算成本，并做频率采样收敛。不得依赖GUI默认值，也不得把Port group属性与具体Port属性混淆。
+- **Port 截面覆盖硬性检查**：每个 FDTD mode source、mode-expansion monitor 或 EME port 必须在其法向截面内完整覆盖目标波导核心，并在两个横向方向保留足够的、均匀的背景/包层裕量以容纳倏逝场。端口的 `y/z` 中心应与目标波导核心中心对齐；其 `y span`、`z span` 均不得小于核心相应尺寸，且必须通过回读验证“核心 bbox 完全落在端口 bbox 内”。对于相邻波导间距远大于端口窗时，应采用局域窗口并确认不包含另一条波导；不得仅因图标箭头看似对准或方便起见而使用 `full simulation span`。端口窗口扩大后，同步确认其仍位于求解器横向域内、背景材料一致且未被 PML 截断。将核心 bbox、端口 bbox、两侧/上下包层裕量和是否包含非目标波导写入 manifest；获得运行授权后再对端口窗口与模式数做收敛检查。
+- **EME port 放置与坐标模式硬性检查**：EME port 是 `EME::Ports` 下的 solver 子对象，必须显式设置并回读 `use relative coordinates`。优先使用相对坐标放置端口：局部坐标按 `port_local = target_global - EME_origin_global` 计算，输入/输出端的局部 x 应分别对应 EME 左/右边界，局部 y/z 应使换算后的全局中心与目标波导核心中心一致。若改用绝对坐标，必须在同一次原子更新中重写全部 x/y/z；禁止只切换复选框而沿用旧坐标值。`port location=left/right` 不能替代坐标审计。保存前及独立重开后同时记录：坐标模式、端口局部/绝对 x/y/z、EME 全局原点、换算后的端口全局坐标、目标波导端面全局坐标和三轴偏差；只有端口平面位于对应波导端面、横向中心偏差为零且窗口完整覆盖核心时才算放置通过。
+- power monitor测总净功率；mode expansion测目标模式正反向功率；field/index monitor只为必要审计开启。FDTD Port已经提供任务所需的复数S参数/模式功率时，不再在同一截面添加重复的power monitor；只有需要独立能量闭合、辐射/非目标模式总功率或不同截面诊断时才额外添加，并在manifest记录其独立用途。
+- 宽带power/expansion覆盖完整波段且包含中心波长。field monitor默认只记录中心波长，除非确需场频谱。
+- 保存结果后重开，复核selected mode、偏振、波长点、归一化、传播方向和结果缓存。
+
+## Mesh、边界与执行门禁
+
+- mesh accuracy编号不等于固定步长；记录实际网格或maximum step。局部mesh先覆盖完整关键材料几何，不通过平移造成另一侧失去覆盖。
+- source/束腰局部mesh是独立的可选项，不因使用Gaussian source自动创建。用户要求“不加source mesh”时必须保持对象不存在；只有source profile、离散误差或收敛证据表明需要时才提出，并单独记录范围、步长和显存代价。
+- 分开验证材料/横截面mesh、模式基组、纵向离散和时间/波长采样；只完成其中一项时准确标注。
+- 对称边界要求几何、材料、source/port、monitor和目标模式奇偶性一致。用户未批准直接采用时，先做同配置全域/半域资格验证。
+- 3D FDTD正式GPU运行前，先保存、关闭并独立重开精确pre-run FSP做几何审计，再执行 `runsystemcheck("FDTD","GPU")`。几何审计后、正式运行前重新读取当前空闲显存；最大估算超过计划安全线时停止，不自动降mesh或转CPU。
+- 不直接在唯一pre-run快照上运行：先保存其SHA256和不可变副本，再从单独运行工作副本调用solver。Lumerical可能原地更新当前FSP或同名外部结果目录；只有 `run()` 返回且会话处于Analysis mode后才能创建带 `analysis` 语义的FSP。门禁失败、中止或返回非Analysis mode时不得留下貌似有效的Analysis FSP。
+- 用GPU资源状态、`fdtd-engine`、p0日志、显存、auto-shutoff、controller状态和Analysis结果共同证明GPU执行。
+- 自动化脚本写入阶段状态与error文件；长任务按完成事件更新，不用固定高频轮询。
+- 每个独立 `run()`、`runsweep()` 或 `emesweep()` 完成后立即向用户反馈该次仿真的完成状态、关键结果和异常；不得等整个流水线结束后才汇报。
+
+## 优化与容错
+
+- 在明确的线性功率域定义FOM，并在metadata记录公式、权重、方向、模式和monitor/result路径。
+- 优先使用Lumerical原生Optimization处理连续变量；计划中明确算法、变量、范围、约束、generation size、最大代数、容差和随机策略。
+- 优化参数盒应天然满足制造约束。可在仿真前拒绝自交、断开或非法尺寸；模式映射、缓存和求解器异常必须停止任务，不能当普通低FOM候选。
+- 每个候选或每代原子保存state/history；保留全局最佳、独立复验和用户要求的代际结果。不要只相信 `runsweep()` 返回，立即验证原生result和完整history。
+- 原生PSO按“完整一代”提交代际快照：记录计划粒子数、已提取粒子数、该代最佳、累计最佳、边界状态和时间戳。部分代不得覆盖上一完整代的全局最佳，也不得用于最终3D结构，除非用户明确选择该候选并完成独立复验。
+- 将效率目标与FOM分离：目标值只是验收阈值，不得为追求目标而改符号、归一化或篡改Optimization FOM。总运行上限必须与 `generation size × maximum generations` 一致；暂停、停止和续跑遵守用户最近指令，不重复启动仍在运行的Optimization。
+- 优化只负责既定精度层级；提高mesh、切换求解器或启动最终宽带均需要计划中已有授权或新的明确授权。
+
+## 结果、图表与证据
+
+- 保存原生功率/Transmission、模式结果、完整S矩阵或当前求解器的等价原生dataset；使用离线overlap时说明归一化、公式和限制。
+- 多端口/多模器件保存完整复数S矩阵、功率矩阵、mode mapping、passivity、reciprocity和能量闭合，不只保存单个 `S21`。
+- 每个波长光谱输出两张独立图：线性效率/透射率图，以及 `10*log10(max(eta,epsilon))` 的负dB图。两图的波长、采样、曲线名称和颜色一致，并写入manifest。
+- 正损耗 `-10*log10(eta)` 可作为摘要指标，不得代替负dB光谱或混淆符号。
+- 报告中心波长、峰值和位置、1/3 dB带宽、模式占比/串扰和边界截断状态；窗口边界峰值不得宣称为真实峰值。
+- 最终结论区分baseline、优化最佳、独立复验、宽带、网格、mode/cell收敛和制造容差。
+
+## 项目结构、归档与清理
+
+建议按以下职责组织，不强制具体文件名：
+
+```text
+<project>/
+├── src/       # UTF-8建模、运行、提取与审计脚本
+├── projects/  # Layout、Optimization和Analysis工程
+├── data/      # CSV/JSON/NPZ/MAT/HDF5与manifest
+├── figures/   # 线性和负dB图、必要场图
+└── logs/      # MCP、controller、solver和GPU日志
+```
+
+- FSP/LMS依赖外部HDF5时，将工程和数据目录作为不可拆分的一组移动、重命名和归档。
+- 对正式运行保留三种不同语义：不可变pre-run快照、可被solver更新的运行工作副本、成功后的Analysis FSP。manifest分别记录运行前和运行后SHA256；若两者相同或pre-run被更新，必须如实标记，不能把运行后的文件冒充原始pre-run。
+- 删除或 `switchtolayout()` 前先导出可复算数据、结果摘要、配置、日志和SHA256，并从交付位置成功重开。
+- 解析所有删除目标的绝对路径，确认位于项目根内；永久删除唯一Analysis、外部HDF5或有效优化历史需要用户明确授权。
+- 清理后更新manifest并确认PyLumerical `list_sessions` 为空。
+
+## v251简要陷阱
+
+- `.lsf`由 `fdtd-solutions.exe -run` 执行，不直接交给 `fdtd-engine.exe`；可见运行不要依赖已观察到不稳定的 `-trun`。
+- 路径含空格导致脚本加载失败时，使用无空格运行目录和相对路径，不猜测GUI是否执行。
+- 新建FDTD频域monitor使用 `adddftmonitor`，避免已废弃的 `addpower`。
+- `length(matrix)`不保证返回行数；需要行数时使用 `length(mtx(:,1))`。
+- 设置mesh order前开启material-database override。
+- `runsweep()`/`emesweep()`返回不代表结果一定存在；立即检查result schema、点数和数值。
+- 调用 `deletesweep(name)` 前先枚举并核对真实sweep/Optimization名称；对象不存在时跳过并记录，不制造无意义warning。Optimization名称、自动生成job名和路径组合应保持简短；保存失败时先检查完整路径长度、目录权限和剩余空间，不把失败候选当作低FOM继续。
+- 多行MCP代码整体compile；遇到dimension/cache错误关闭污染会话，从干净工程重开并先读最稳健的原生结果。
+
+## 最终验收
+
+- [ ] 需求、工艺、坐标、模式、FOM、资源和授权已明确。
+- [ ] Si、BOX、top cladding、可选substrate及所有subtract/刻蚀深度按工艺建立，z边界连续且没有非设计缝隙。
+- [ ] 参数化几何setup后通过连续性、最小特征、材料、端口/source、monitor和边界审计。
+- [ ] 所有重叠材料已回读mesh-order override与数值，并用index截面确认Si、槽、BOX和top cladding的实际解析结果。
+- [ ] 求解器与物理问题匹配，低成本优化和高保真验证没有混称。
+- [ ] mesh、模式基组、纵向离散和宽带验证状态分别标注。
+- [ ] 最佳点从干净Layout独立复验；边界最佳已标记。
+- [ ] GPU或CPU执行证据、原生结果、图、manifest和SHA256完整。
+- [ ] 不可变pre-run快照、运行工作副本和Analysis FSP语义分离；Analysis只在solver成功返回Analysis mode后创建。
+- [ ] Gaussian source没有被自动附加source mesh；若存在source mesh，已有明确理由、范围、显存和验证证据。
+- [ ] 最终工程与外部数据可从交付位置重开。
+- [ ] 清理符合授权，最终PyLumerical会话为空。
