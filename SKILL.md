@@ -1,9 +1,9 @@
 ---
-name: jnu-mwp-fdtd
-description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic devices at JNU MWP. Use for FDTD, MODE/FDE, EME, varFDTD, parameterized structure groups, native Optimization, GDS reconstruction/export, GPU execution, broadband results, tapers, bends, MMI/PBS, couplers, grating couplers, mode converters, and related simulation debugging or cleanup through PyLumerical MCP.
+name: fdtd-sip-simulation
+description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic devices at JNU MWP. Use for FDTD, MODE/FDE, EME, varFDTD, parameterized structure groups, native Optimization, GDS reconstruction/export, GPU execution, broadband results, parameter sweeps, tapers, bends, MMI/PBS, couplers, grating couplers, mode converters, and related simulation debugging or cleanup through PyLumerical MCP.
 ---
 
-# JNU MWP — 硅光器件通用仿真规范
+# FDTD-SiP-Simulation — 硅光器件通用仿真规范
 
 ## 核心原则
 
@@ -11,6 +11,7 @@ description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic d
 - 通过PyLumerical MCP控制Lumerical，不直接实例化 `lumapi`。把可复现的长流程保存为项目脚本，不让关键逻辑只存在于一次性snippet。
 - 先需求确认和Layout审计，再preflight、求解、结果重开和清理；每阶段使用独立状态与manifest。
 - `run()`、`runsweep()`/`emesweep()` 和 `switchtolayout()` 分别需要明确授权。不得把一次运行授权扩展到其他求解或丢弃结果。
+- **所有实际仿真必须显示运行**：凡调用 `run()`、`runsweep()`、`emesweep()`、`findmodes()` 或启动 FDTD/MODE/EME/varFDTD 的 CPU/GPU solver，必须以 `open_session(..., hide=false)` 打开并保持 Lumerical IDE/solver GUI 可见。纯 Layout 建模、无求解审计、controller、watcher、日志和归档脚本可以隐藏。
 - 不发明材料、尺寸、边界、mesh、模式数或优化范围；能从输入文件发现的先审计，仍有高影响歧义时再询问用户。
 - 用参数化structure group或可维护polygon生成器表示待优化器件；GDS可作真值和只读对照，不作为不可编辑的优化主体。
 - 不把单档mesh、单一basis-mode数或单一纵向离散称为已收敛；报告准确的验证层级。
@@ -20,6 +21,7 @@ description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic d
 
 - 光栅耦合器GDS复现、周期定义、Gaussian对光、原生Optimization、3D GPU宽带和GDS交付：完整读取 [references/grating-coupler-optimization.md](references/grating-coupler-optimization.md)。
 - 参数化欧拉/一般变曲率弯曲、FDE/varFDTD/EME/FDTD分工、曲率离散、S矩阵和弯曲优化：完整读取 [references/eme-euler-bend.md](references/eme-euler-bend.md)。欧拉专用参数和流程只维护在该文件，主skill不复制。
+- 偏振器件（PBS/PSR、起偏器、偏振旋转器和模式转换器）的参数语义隔离、structure group与仿真对象联动、PML直波导、TE/TM测量、原生Optimization/Parameter Sweep、结果交接和快速审计：完整读取 [references/polarization-device-simulation.md](references/polarization-device-simulation.md)。
 - 从最终Layout FSP导出曲线GDS：完整读取并复用 [scripts/export_layout.lsf](scripts/export_layout.lsf)，只改顶部参数区，不重写主体。
 
 ## PyLumerical MCP调用规范
@@ -69,6 +71,12 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - 输入/输出直波导延伸穿过相关PML，port/source和monitor放在均匀直波导或均匀介质内。FDTD边界不要无必要地进入高折射率substrate。
 - 曲线使用基于弦高误差的自适应离散；审计实际最大弦高、顶点数、切线连续性和自交。
 - 每次参数变化后执行setup并读取实际全局坐标，不只检查user property。
+- 从GDS重建器件时，只导入或解析任务需要的工艺层；端口标记、边界参考和器件轮廓要分开处理。端口标记层只用于定位和宽度参考，不应被误导入为硅器件几何。
+- 对会改变轮廓的参数扫描，优先在structure group内集中管理参数和几何重建。保存名义pre-run时恢复用户指定的基准参数，并记录参数单位、物理含义和默认值。
+- 使用 `polygrow` 或等价几何偏置时，必须审计面积变化趋势、bbox、顶点数、自交、退化边、错误孔洞和与固定波导/端口区域的连续性。基准参数几何应在GDS DBU或项目指定容差内复现原始轮廓真值。
+- 旧变量若同时驱动多个物理上独立的结构，先拆成独立变量；新变量的名义值先等于旧值，并用“名义、仅改新变量、仅改旧变量、组合改动”的setup矩阵证明基线几何不变且控制关系相互隔离。
+- structure group负责真实器件几何；需要联动FDTD、source、monitor、包层、mesh或PML延伸时，由显式标记的顶层controller读取真实group属性并按物理依赖更新。禁止在顶层复制同名shadow参数，禁止移动与变量没有真实依赖的对象。
+- 将均匀输出直波导明确拆为FDTD/PML内长度与边界外延长度；参数变化后读回taper端面、直波导中心线、monitor平面、FDTD边界和包层bbox，证明连续性与覆盖关系。
 
 ### SOI基础层叠
 
@@ -114,6 +122,8 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - 分开验证材料/横截面mesh、模式基组、纵向离散和时间/波长采样；只完成其中一项时准确标注。
 - 对称边界要求几何、材料、source/port、monitor和目标模式奇偶性一致。用户未批准直接采用时，先做同配置全域/半域资格验证。
 - 3D FDTD正式GPU运行前，先保存、关闭并独立重开精确pre-run FSP做几何审计，再执行 `runsystemcheck("FDTD","GPU")`。几何审计后、正式运行前重新读取当前空闲显存；最大估算超过计划安全线时停止，不自动降mesh或转CPU。
+- 局部mesh优先覆盖主要散射、耦合、分光或强场变化区域；不要为了图上美观把mesh铺满长直波导、端口或低影响弯曲段。改变mesh步长做敏感性比较时，保持bbox、边界、端口、源、波长和结果提取定义不变，只改变待比较的mesh参数。
+- **显示运行硬门禁**：每次求解、求模、sweep 或 Optimization 启动前，回读并确认对应 Lumerical IDE 是由 `hide=false` 会话打开且当前具有可见、可定位的窗口；不以进程存在、隐藏会话或日志输出代替可见性证据。若工作会话以 `hide=true` 打开，必须在任何 solver 调用前保存并关闭它，从同一 fresh working FSP 以 `hide=false` 重新打开并复核状态；不得先隐藏启动长任务，再尝试用操作系统手段中途“显示”窗口。可见性无法确认时停止，不启动 solver。controller、日志监控和归档脚本仍可隐藏。若出现“没有active GPU资源”等资源配置警告，先停止并修正Resource Configuration或GPU可用性，不要自动转CPU或继续提交长sweep。
 - 不直接在唯一pre-run快照上运行：先保存其SHA256和不可变副本，再从单独运行工作副本调用solver。Lumerical可能原地更新当前FSP或同名外部结果目录；只有 `run()` 返回且会话处于Analysis mode后才能创建带 `analysis` 语义的FSP。门禁失败、中止或返回非Analysis mode时不得留下貌似有效的Analysis FSP。
 - 用GPU资源状态、`fdtd-engine`、p0日志、显存、auto-shutoff、controller状态和Analysis结果共同证明GPU执行。
 - 自动化脚本写入阶段状态与error文件；长任务按完成事件更新，不用固定高频轮询。
@@ -128,6 +138,9 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - 原生PSO按“完整一代”提交代际快照：记录计划粒子数、已提取粒子数、该代最佳、累计最佳、边界状态和时间戳。部分代不得覆盖上一完整代的全局最佳，也不得用于最终3D结构，除非用户明确选择该候选并完成独立复验。
 - 将效率目标与FOM分离：目标值只是验收阈值，不得为追求目标而改符号、归一化或篡改Optimization FOM。总运行上限必须与 `generation size × maximum generations` 一致；暂停、停止和续跑遵守用户最近指令，不重复启动仍在运行的Optimization。
 - 优化只负责既定精度层级；提高mesh、切换求解器或启动最终宽带均需要计划中已有授权或新的明确授权。
+- 形状优化先基于失效机理收缩参数空间：若弯曲损耗不是主要问题，应优先优化中心分光/散射区域，固定输入/输出直波导、端口坐标和低影响长弯曲。参数数量、粒子数和代数要与计算预算一起显式记录；用户要求简化时，先减少物理冗余参数而不是改变FOM定义。
+- 不要把额外工艺变动或鲁棒性约束自动加入Optimization，除非计划中明确要求。名义优化完成后，再用独立Layout和独立扫描工程做后续验证；验证失败是后续结论，不应回写成优化历史中的伪约束。
+- 用户要求停止Optimization时，立即停止提交新任务并确认无残留求解/优化进程；只把已完成的完整代或已独立复验候选作为可交付最佳点。停止后的后续验证必须从该最佳点的干净Layout副本开始。
 
 ## 结果、图表与证据
 
@@ -136,7 +149,9 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - 每个波长光谱输出两张独立图：线性效率/透射率图，以及 `10*log10(max(eta,epsilon))` 的负dB图。两图的波长、采样、曲线名称和颜色一致，并写入manifest。
 - 正损耗 `-10*log10(eta)` 可作为摘要指标，不得代替负dB光谱或混淆符号。
 - 报告中心波长、峰值和位置、1/3 dB带宽、模式占比/串扰和边界截断状态；窗口边界峰值不得宣称为真实峰值。
-- 最终结论区分baseline、优化最佳、独立复验、宽带、网格、mode/cell收敛和制造容差。
+- 最终结论区分baseline、优化最佳、独立复验、宽带、网格、mode/cell收敛和工艺变动验证。
+- 数据交付优先保存可复算的逐点CSV、按扫描变量汇总CSV、单行摘要CSV和manifest。CSV行数、扫描点数、波长点数、单位和列名必须可由manifest复核；图表只作为呈现，不作为唯一数据源。
+- 作图先确定指标定义和单位，再画图；同一指标的不同曲线使用一致采样和颜色语义。用户已经给出坐标轴文字或字号偏好时严格使用；不要把内部mesh标签塞进标题。
 
 ## 项目结构、归档与清理
 
@@ -152,6 +167,8 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 ```
 
 - FSP/LMS依赖外部HDF5时，将工程和数据目录作为不可拆分的一组移动、重命名和归档。
+- 路径含空格导致Lumerical脚本或批处理截断时，优先迁移到项目内无空格目录并同步更新脚本、manifest和关联路径；不要在路径解析不可靠的状态下继续运行长任务。
+- 不同器件、mesh档位、优化候选和参数扫描验证使用独立运行空间；不要覆盖既有mesh档位、pre-run、Analysis或历史sweep结果。目录名中包含器件、候选、mesh和阶段语义，避免后续把敏感性比较误认为收敛。
 - 对正式运行保留三种不同语义：不可变pre-run快照、可被solver更新的运行工作副本、成功后的Analysis FSP。manifest分别记录运行前和运行后SHA256；若两者相同或pre-run被更新，必须如实标记，不能把运行后的文件冒充原始pre-run。
 - 删除或 `switchtolayout()` 前先导出可复算数据、结果摘要、配置、日志和SHA256，并从交付位置成功重开。
 - 解析所有删除目标的绝对路径，确认位于项目根内；永久删除唯一Analysis、外部HDF5或有效优化历史需要用户明确授权。

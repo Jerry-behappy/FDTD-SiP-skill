@@ -1,4 +1,4 @@
 interface:
-  display_name: "JNU MWP Lumerical"
+  display_name: "FDTD-SiP-Simulation"
   short_description: "硅光器件参数化建模、原生优化、GPU仿真、结果提取与审计"
-  default_prompt: "使用 $jnu-mwp-fdtd 通过 PyLumerical MCP 完成可审计的硅光器件仿真任务。"
+  default_prompt: "使用 $fdtd-sip-simulation 通过 PyLumerical MCP 完成可审计的硅光器件仿真任务。"

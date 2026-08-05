@@ -1,6 +1,6 @@
-# FDTD-skill
+# FDTD-SiP-Simulation
 
-面向 Ansys Lumerical 2025 R1 的硅光子器件仿真技能，适用于 FDTD、MODE/FDE、EME、varFDTD、参数化结构组、优化、GDS 重建与版图导出等工作流。
+FDTD-SiP-Simulation 是面向 Ansys Lumerical 2025 R1 的通用硅光子器件仿真技能，适用于 FDTD、MODE/FDE、EME、varFDTD、参数化结构组、优化、GDS 重建与版图导出等工作流。
 
 ## 主要内容
 
@@ -24,11 +24,11 @@ scripts/export_layout.lsf        版图导出脚本
 在 Codex 中提出具体的 Lumerical 仿真或版图任务即可触发本技能。例如：
 
 ```text
-使用 jnu-mwp-fdtd，检查这个 GDS 的实际层和几何结构，并重建为 SOI FDTD 模型。
+使用 fdtd-sip-simulation，检查这个 GDS 的实际层和几何结构，并重建为 SOI FDTD 模型。
 ```
 
 ```text
-使用 jnu-mwp-fdtd，设置参数化光栅耦合器并分析 1550 nm 附近的耦合效率。
+使用 fdtd-sip-simulation，设置参数化光栅耦合器并分析 1550 nm 附近的耦合效率。
 ```
 
 ## 环境要求
