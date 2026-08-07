@@ -1,4 +1,5 @@
 # 用途：从最终 Layout FSP 提取实际轮廓并导出 GDS，不启动求解器，也不保存或修改源 FSP。
+# 可复用用途：只修改用户参数区，即可对不同工程执行同一套截面审计和曲线 GDS 导出流程。
 closeall;
 clear;
 clearfunctions;
