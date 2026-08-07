@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Apply auditable Layout-only settings to FDTD, MODE/FDE, EME, or varFDTD.
+"""为 FDTD、MODE/FDE、EME 或 varFDTD 应用可审计的纯 Layout 设置。
 
-Run as a PyLumerical MCP ``code_file`` with a JSON ``code_context``. Supported
-operations are named-object settings, global source/monitor settings,
-mode-expansion bindings, optional ``runsetup()``, readback, and an explicitly
-named fresh save target. The worker refuses Analysis mode and never calls a
-solver or ``switchtolayout()``.
+通过 PyLumerical MCP 把本文件作为 ``code_file`` 执行，并提供 JSON
+``code_context``。支持 named object、global source/monitor、mode expansion
+绑定、可选 ``runsetup()``、readback 和显式命名的 fresh 保存目标。本 worker
+拒绝 Analysis mode，且不会调用求解器或 ``switchtolayout()``。
 
-Reusable role: configure solver regions, sources, ports, monitors, meshes, and
-parameterized structure-group properties without copying project-specific
-Python code into every simulation folder.
+可复用用途：统一配置 solver region、source、port、monitor、mesh 和参数化
+structure group 属性，无需在每个仿真目录中复制项目专用 Python 代码。
 """
 
 from __future__ import annotations
