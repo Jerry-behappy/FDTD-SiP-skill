@@ -4,6 +4,9 @@
 The destination must not exist. The script copies through a temporary sibling,
 verifies hashes, writes ``bundle_manifest.json``, and then atomically renames
 the completed directory. It never opens or modifies the source FSP/H5.
+
+Reusable role: preserve a readable candidate or best-solution FSP together
+with the exact relative H5 sidecar before Optimization directories are cleaned.
 """
 
 from __future__ import annotations

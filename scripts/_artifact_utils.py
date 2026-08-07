@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Shared stdlib helpers for auditable Lumerical project artifacts."""
+"""Shared stdlib helpers for auditable Lumerical project artifacts.
+
+Reusable role: centralize atomic JSON, streaming SHA-256, p0 success checks,
+and native GPU H5 sidecar discovery for the other scripts in this directory.
+"""
 
 from __future__ import annotations
 

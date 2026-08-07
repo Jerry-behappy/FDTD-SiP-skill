@@ -5,6 +5,9 @@ This is an MCP client, not a solver wrapper. It never imports ``lumapi``.
 Actual solver calls remain subject to the Skill authorization and visible-GUI
 gates; use ``open_session(..., hide=false)`` in scenarios that are authorized
 to run. A scenario may load a tool argument named ``code`` from ``code_file``.
+
+Reusable role: execute ordered, reviewable PyLumerical MCP scenarios while
+keeping long UTF-8 Python code in project files instead of one-off snippets.
 """
 
 from __future__ import annotations
