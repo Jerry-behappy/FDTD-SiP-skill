@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Read-only FDTD/MODE/EME/varFDTD configuration and result audit.
+"""只读审计 FDTD、MODE/FDE、EME 与 varFDTD 的配置和结果。
 
-Run this file as ``code_file`` with ``pylumerical_mcp_stdio_runner.py`` and
-provide a JSON ``code_context``. The PyLumerical execution environment supplies
-``_lum_get`` and ``_lum_print_json``. This worker never calls a solver, saves a
-project, changes Layout/Analysis mode, or imports ``lumapi``.
+通过 ``pylumerical_mcp_stdio_runner.py`` 把本文件作为 ``code_file`` 执行，
+并提供 JSON ``code_context``。PyLumerical 执行环境负责提供 ``_lum_get`` 和
+``_lum_print_json``。本 worker 不调用求解器、不保存工程、不切换
+Layout/Analysis mode，也不导入 ``lumapi``。
 
-Reusable role: one compact, product-agnostic readback path for named objects,
-global source/monitor settings, native sweep settings, and native result
-datasets. Numeric arrays are summarized instead of copied into the MCP log.
+可复用用途：使用统一、紧凑且与产品无关的接口，回读 named object、global
+source/monitor、原生 Sweep 设置和原生结果 dataset。数值数组只输出摘要，
+不把大数组直接复制到 MCP 日志。
 """
 
 from __future__ import annotations
