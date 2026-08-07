@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Create a native Lumerical Parameter Sweep or Optimization without running it.
+"""创建原生 Lumerical Parameter Sweep 或 Optimization，但不启动运行。
 
-Run as a PyLumerical MCP ``code_file`` with ``code_context``. The JSON context
-contains the native ``setsweep`` settings plus the parameter/result structs
-passed to ``addsweepparameter`` and ``addsweepresult``. This keeps Lumerical's
-field names intact and makes the same worker reusable for FDTD, MODE, EME, and
-varFDTD projects.
+通过 PyLumerical MCP 把本文件作为 ``code_file`` 执行，并提供
+``code_context``。JSON context 包含原生 ``setsweep`` 设置，以及传给
+``addsweepparameter`` 和 ``addsweepresult`` 的 parameter/result struct。
+脚本保留 Lumerical 原生字段名，可复用于 FDTD、MODE、EME 和 varFDTD 工程。
 
-The worker requires Layout mode, enumerates existing analysis items before an
-optional replacement, never calls ``runsweep``/``emesweep``, and only saves to
-an explicitly named path that differs from the immutable source file.
+本 worker 要求工程处于 Layout mode；可选替换前先枚举现有 analysis item；
+永不调用 ``runsweep``/``emesweep``；仅保存到与不可变源文件不同的显式路径。
 """
 
 from __future__ import annotations
