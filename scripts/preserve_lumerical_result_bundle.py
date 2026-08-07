@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Atomically preserve an FSP with its exact relative GPU H5 sidecar.
+"""将 FSP 与其准确相对路径的 GPU H5 sidecar 原子归档。
 
-The destination must not exist. The script copies through a temporary sibling,
-verifies hashes, writes ``bundle_manifest.json``, and then atomically renames
-the completed directory. It never opens or modifies the source FSP/H5.
+目标目录必须不存在。脚本先复制到同级临时目录，校验哈希并写入
+``bundle_manifest.json``，再把完整目录原子重命名。脚本不会打开或修改源
+FSP/H5。
 
-Reusable role: preserve a readable candidate or best-solution FSP together
-with the exact relative H5 sidecar before Optimization directories are cleaned.
+可复用用途：在清理 Optimization 目录前，把可读 candidate 或 best-solution
+FSP 与其准确相对 H5 sidecar 一起保存。
 """
 
 from __future__ import annotations
@@ -36,19 +36,19 @@ def safe_relative(path: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Copy an FSP and its referenced GPU H5 as one atomic bundle."
+        description="把 FSP 与其引用的 GPU H5 复制为一个原子结果包。"
     )
-    parser.add_argument("fsp", type=Path)
-    parser.add_argument("destination", type=Path)
-    parser.add_argument("--h5", type=Path, help="Explicit source H5")
+    parser.add_argument("fsp", type=Path, help="源 FSP 文件")
+    parser.add_argument("destination", type=Path, help="目标结果包目录")
+    parser.add_argument("--h5", type=Path, help="显式指定源 H5")
     parser.add_argument(
         "--h5-relative",
         type=Path,
-        help="Required when explicit H5 is outside the FSP parent",
+        help="显式 H5 位于 FSP 父目录外时必须提供其目标相对路径",
     )
-    parser.add_argument("--p0-log", type=Path)
-    parser.add_argument("--require-success-log", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--p0-log", type=Path, help="可选 p0 日志")
+    parser.add_argument("--require-success-log", action="store_true", help="要求成功 p0 日志")
+    parser.add_argument("--dry-run", action="store_true", help="只检查计划，不复制文件")
     args = parser.parse_args()
 
     fsp = args.fsp.resolve()
