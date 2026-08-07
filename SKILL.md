@@ -24,6 +24,15 @@ description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic d
 - 偏振器件（PBS/PSR、起偏器、偏振旋转器和模式转换器）的参数语义隔离、structure group与仿真对象联动、PML直波导、TE/TM测量、原生Optimization/Parameter Sweep、结果交接和快速审计：完整读取 [references/polarization-device-simulation.md](references/polarization-device-simulation.md)。
 - 从最终Layout FSP导出曲线GDS：完整读取并复用 [scripts/export_layout.lsf](scripts/export_layout.lsf)，只改顶部参数区，不重写主体。
 
+## 通用脚本入口
+
+- 批量执行可审计的PyLumerical MCP调用：复用 [scripts/pylumerical_mcp_stdio_runner.py](scripts/pylumerical_mcp_stdio_runner.py)。scenario只保存有序tool calls和UTF-8 `code_file`；实际求解仍须单独满足授权与 `hide=false` 可见门禁。先用 `--dry-run` 校验scenario，禁止在脚本中写死项目路径。
+- 生成文件树SHA-256清单：复用 [scripts/build_sha256_manifest.py](scripts/build_sha256_manifest.py)。默认拒绝root外输入；确需审计外部源文件时显式使用 `--allow-outside-root`，不得借此修改源文件。
+- 审计单个working/best/candidate结果包：复用 [scripts/audit_lumerical_result_bundle.py](scripts/audit_lumerical_result_bundle.py)。它只读检查FSP、同名或内嵌引用H5及可选p0成功日志；正式门禁使用 `--strict`，但结果可读性仍须PyLumerical独立重开 `getresult()` 验证。
+- 清理代目录前原子归档结果包：复用 [scripts/preserve_lumerical_result_bundle.py](scripts/preserve_lumerical_result_bundle.py)。它保持FSP引用的相对sidecar目录结构、复制并校验SHA-256，且拒绝覆盖已有目标；先用 `--dry-run` 核对源与目标。
+- 审计原生Optimization代目录：复用 [scripts/audit_native_optimization.py](scripts/audit_native_optimization.py)。传入working FSP、Optimization名称、population和generation数；只有FSP、成功p0和非空H5齐全才计为完整candidate。该脚本不读取原生FOM/history，不得用其filesystem计数冒充Optimization最终结果。
+- 上述Python脚本只使用stdlib，并通过 [scripts/_artifact_utils.py](scripts/_artifact_utils.py) 共享atomic JSON、流式SHA-256和GPU sidecar解析。优先参数化调用这些脚本，不在新项目中复制后再加入器件专用常量。
+
 ## PyLumerical MCP调用规范
 
 1. 写任何Lumerical Python前调用 `get_guidelines_for("workflow")` 和 `get_guidelines_for("pic")`。
