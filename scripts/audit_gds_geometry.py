@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Read-only, stdlib-only GDSII hierarchy and geometry audit.
+"""仅用 Python 标准库只读审计 GDSII 层级与几何。
 
-The parser reports database units, cells, layers/datatypes, top-cell candidates,
-flattened SREF geometry, labels, bounding boxes, areas, warnings, and SHA-256.
-BOUNDARY, BOX, PATH, TEXT, and common SREF transforms are supported. AREF is
-reported but deliberately not expanded, so unsupported array geometry is never
-silently accepted as complete.
+解析器报告 database unit、cell、layer/datatype、顶层 cell 候选、展平后的
+SREF 几何、文字、边界框、面积、warning 和 SHA-256。支持 BOUNDARY、BOX、
+PATH、TEXT 与常见 SREF 变换。AREF 会被明确报告但不会展开，避免把不支持的
+阵列几何静默误判为完整结果。
 
-Reusable role: establish GDS geometry truth before Lumerical reconstruction or
-after LSF export without requiring KLayout, gdstk, gdspy, or Lumerical.
+可复用用途：在 Lumerical 几何重建前或 LSF 导出后建立 GDS 几何真值，
+无需安装 KLayout、gdstk、gdspy 或 Lumerical。
 """
 
 from __future__ import annotations
@@ -403,23 +402,23 @@ def build_report(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("gds", type=Path, help="source GDSII file")
-    parser.add_argument("--output", type=Path, help="JSON output; defaults beside the GDS")
+    parser.add_argument("gds", type=Path, help="源 GDSII 文件")
+    parser.add_argument("--output", type=Path, help="JSON 输出路径；默认写在 GDS 旁")
     parser.add_argument(
         "--top-cell",
         action="append",
         dest="top_cells",
-        help="top cell to flatten; repeat for more than one",
+        help="需要展平的顶层 cell；多个 cell 可重复指定",
     )
     parser.add_argument(
         "--include-elements",
         action="store_true",
-        help="include flattened points; default report stays compact",
+        help="包含展平后的逐点坐标；默认输出紧凑摘要",
     )
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="return exit code 2 when any parse/flatten warning exists",
+        help="存在任何解析或展平 warning 时返回退出码 2",
     )
     args = parser.parse_args()
 
