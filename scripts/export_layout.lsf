@@ -1,3 +1,4 @@
+# 用途：从最终 Layout FSP 提取实际轮廓并导出 GDS，不启动求解器，也不保存或修改源 FSP。
 closeall;
 clear;
 clearfunctions;
