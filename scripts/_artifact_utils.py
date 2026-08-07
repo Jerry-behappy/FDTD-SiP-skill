@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Shared stdlib helpers for auditable Lumerical project artifacts.
+"""用于可审计 Lumerical 工程产物的标准库公共工具。
 
-Reusable role: centralize atomic JSON, streaming SHA-256, p0 success checks,
-and native GPU H5 sidecar discovery for the other scripts in this directory.
+可复用用途：集中提供原子 JSON 写入、流式 SHA-256、p0 成功检查和原生 GPU
+H5 sidecar 发现，供本目录中的其他脚本统一调用。
 """
 
 from __future__ import annotations
