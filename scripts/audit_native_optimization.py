@@ -5,6 +5,9 @@ Completion requires a nonempty candidate FSP, a successful candidate p0 log,
 and one nonempty referenced GPU H5 sidecar. This is a read-only filesystem
 audit; it does not claim native FOM/history availability and never starts or
 attaches to Lumerical.
+
+Reusable role: count only complete FSP+p0+H5 candidate bundles by generation
+without repeatedly opening large FSP files or launching a solver.
 """
 
 from __future__ import annotations
