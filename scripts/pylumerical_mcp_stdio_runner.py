@@ -4,7 +4,8 @@
 This is an MCP client, not a solver wrapper. It never imports ``lumapi``.
 Actual solver calls remain subject to the Skill authorization and visible-GUI
 gates; use ``open_session(..., hide=false)`` in scenarios that are authorized
-to run. A scenario may load a tool argument named ``code`` from ``code_file``.
+to run. A scenario may load a tool argument named ``code`` from ``code_file``
+and inject a JSON object as ``CODEX_CONTEXT`` with ``code_context``.
 
 Reusable role: execute ordered, reviewable PyLumerical MCP scenarios while
 keeping long UTF-8 Python code in project files instead of one-off snippets.
@@ -154,12 +155,20 @@ def _materialize_arguments(
 ) -> dict[str, Any]:
     result = dict(arguments)
     code_file = result.pop("code_file", None)
+    code_context = result.pop("code_context", None)
+    if code_context is not None and not isinstance(code_context, dict):
+        raise ValueError(f"{label}: code_context must be a JSON object")
+    if code_context is not None and code_file is None:
+        raise ValueError(f"{label}: code_context requires code_file")
     if code_file is not None:
         code_path = Path(code_file)
         if not code_path.is_absolute():
             code_path = scenario_dir / code_path
         source = code_path.read_text(encoding="utf-8")
-        result["code"] = f"exec(compile({source!r}, {label!r}, 'exec'))"
+        prefix = ""
+        if code_context is not None:
+            prefix = f"CODEX_CONTEXT = {code_context!r}\n"
+        result["code"] = prefix + f"exec(compile({source!r}, {label!r}, 'exec'))"
     return result
 
 
@@ -226,6 +235,9 @@ def main() -> int:
                     "capture": entry.get("capture", "summary"),
                     "argument_keys": sorted(arguments),
                     "code_bytes": len(arguments.get("code", "").encode("utf-8")),
+                    "code_context_keys": sorted(
+                        entry.get("arguments", {}).get("code_context", {})
+                    ),
                 }
             )
         payload = {"dry_run": True, "scenario": str(scenario_path), "calls": materialized}
