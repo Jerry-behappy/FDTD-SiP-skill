@@ -26,7 +26,12 @@ description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic d
 
 ## 通用脚本入口
 
-- 批量执行可审计的PyLumerical MCP调用：复用 [scripts/pylumerical_mcp_stdio_runner.py](scripts/pylumerical_mcp_stdio_runner.py)。scenario只保存有序tool calls和UTF-8 `code_file`；实际求解仍须单独满足授权与 `hide=false` 可见门禁。先用 `--dry-run` 校验scenario，禁止在脚本中写死项目路径。
+- 批量执行可审计的PyLumerical MCP调用：复用 [scripts/pylumerical_mcp_stdio_runner.py](scripts/pylumerical_mcp_stdio_runner.py)。scenario保存有序tool calls、UTF-8 `code_file` 和可选JSON `code_context`；实际求解仍须单独满足授权与 `hide=false` 可见门禁。先用 `--dry-run` 校验scenario，禁止在脚本中写死项目路径。
+- FDTD、MODE/FDE、EME与varFDTD的通用Layout配置：复用 [scripts/configure_lumerical_project_via_mcp.py](scripts/configure_lumerical_project_via_mcp.py)。通过`code_context`传入named/global设置、structure group参数、`setexpansion`绑定、可选`runsetup`和readback；只允许显式fresh `save_as`，不求解、不自动`switchtolayout()`。
+- 跨求解器只读配置/结果分析：复用 [scripts/audit_lumerical_project_via_mcp.py](scripts/audit_lumerical_project_via_mcp.py)。读取named object、global source/monitor、Sweep属性和原生`getresult()`，大数组只返回shape、有限值统计与小样本；不在通用脚本中预设器件FOM或模式语义。
+- 配置原生Parameter Sweep或Optimization：复用 [scripts/configure_native_sweep_via_mcp.py](scripts/configure_native_sweep_via_mcp.py)。直接使用Lumerical原生parameter/result struct字段，先枚举再按显式`replace_existing`替换，并回读设置；脚本永不调用`runsweep()`/`emesweep()`。
+- GDSII版图只读审计：复用 [scripts/audit_gds_geometry.py](scripts/audit_gds_geometry.py)。标准库解析cell、layer/datatype、BOUNDARY/BOX/PATH/TEXT、SREF、bbox、DBU和SHA-256；AREF等未展开内容必须保留warning，不能宣称几何完整。
+- 从已审计的工艺层映射生成GDS重建LSF：复用 [scripts/generate_gds_import_lsf.py](scripts/generate_gds_import_lsf.py)。输入明确的GDS、cell、layer/datatype、material和可选Z范围，输出只做`gdsimport()`的Layout脚本；不猜材料/层叠，也不执行Lumerical。
 - 生成文件树SHA-256清单：复用 [scripts/build_sha256_manifest.py](scripts/build_sha256_manifest.py)。默认拒绝root外输入；确需审计外部源文件时显式使用 `--allow-outside-root`，不得借此修改源文件。
 - 审计单个working/best/candidate结果包：复用 [scripts/audit_lumerical_result_bundle.py](scripts/audit_lumerical_result_bundle.py)。它只读检查FSP、同名或内嵌引用H5及可选p0成功日志；正式门禁使用 `--strict`，但结果可读性仍须PyLumerical独立重开 `getresult()` 验证。
 - 清理代目录前原子归档结果包：复用 [scripts/preserve_lumerical_result_bundle.py](scripts/preserve_lumerical_result_bundle.py)。它保持FSP引用的相对sidecar目录结构、复制并校验SHA-256，且拒绝覆盖已有目标；先用 `--dry-run` 核对源与目标。
