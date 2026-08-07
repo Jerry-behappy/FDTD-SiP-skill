@@ -159,8 +159,10 @@ fdtd.setexpansion(expansion_name, dft_name)
 7. 首次验证Optimization链路时，可在用户授权的低mesh或极小population×generation上使用独立pilot；pilot只验证source、FOM、GPU、candidate保存和结果提取。正式mesh从干净Layout创建新的working FSP，不继承pilot缓存、history或candidate。
 8. 对可分段级联的模式转换器，只有在中间截面、目标中间模式、传播方向和均匀接入波导已明确时，才允许把长器件拆成独立stage优化以缩短计算时间；每段使用自己的source/expansion和FOM。分段最佳不能直接宣称全器件最佳，之后必须用fresh完整级联working FSP做转换与泄露复验。
 9. 对GPU Optimization，将每个candidate视为不可拆分结果包：`candidate.fsp`、成功的`candidate_p0.log`和相邻同名目录中的`candidate/candidate_output.h5`。仅当三者存在、H5非空且名称对应时增加完成计数；不得按FSP数量、p0日志数量或solver退出码单独判定。轮询先检查确定性同名路径，只在缺失或名称异常时读取FSP二进制中的相对H5引用。
+   - 新项目优先直接调用 `scripts/audit_native_optimization.py` 做代际filesystem门禁，调用 `scripts/audit_lumerical_result_bundle.py` 检查单个candidate/best结果包；不要重新复制项目专用watcher中的计数逻辑。
 10. `resave files after analysis=1` 只表示analysis后重新保存candidate FSP，不会把GPU monitor数据嵌入FSP，也不能替代H5完整性检查。禁止在结果归档前调用`switchtolayout()`；切回Layout并保存会删除外部GPU结果。
 11. 原生 `*_best_solution.fsp` 通常是candidate FSP的复制品，内部仍可能引用该candidate的相对H5路径。每次全局最佳变化后立即解析该引用，在best-solution FSP所在目录补齐完全相同的相对sidecar目录，同时向稳定归档位置原子复制“best FSP + sidecar目录”。记录原candidate、相对路径、字节数和FSP/H5 SHA256；目标已存在但SHA不符时停止，不覆盖。
+    - 优先使用 `scripts/preserve_lumerical_result_bundle.py` 创建不可覆盖的原子归档，并用 `scripts/audit_lumerical_result_bundle.py --strict` 复核；不得只复制best FSP。
 12. 在删除旧generation目录、暂停清理或移动best FSP前，先完成第11步。若被引用的candidate sidecar已经丢失，不能靠重新保存旧FSP、重算mode expansion或复制其他candidate H5修复；将其标记为不可恢复结果包并保留故障路径证据。
 13. 只有一代的全部candidate结果包通过第9步、结果数量正确且汇总原子写入后，才能更新该代最佳与全局最佳。部分代、失败重试、空结果或缺sidecar candidate不得覆盖最近完整代的最佳值。原生history尚未落盘时，只能对p0成功且sidecar完整的稳定candidate做无run、无save只读诊断，并标记为 `partial-generation diagnostic`。
 14. 用户要求停止时立即停止新增candidate，保留最近完整代、当前部分代、全局最佳、state/history、candidate结果包和日志；不得为“补齐一代”继续求解。
