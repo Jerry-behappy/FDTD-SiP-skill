@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Audit one Lumerical FSP, GPU H5 sidecar, and optional p0 log bundle.
+"""审计单个 Lumerical FSP、GPU H5 sidecar 和可选 p0 日志结果包。
 
-The script never opens Lumerical, runs a solver, saves an FSP, or changes the
-input bundle. It checks the deterministic same-name sidecar first and falls
-back to native relative H5 references embedded in the FSP.
+本脚本不会打开 Lumerical、运行求解器、保存 FSP 或修改输入结果包。脚本优先
+检查确定性的同名 sidecar，再回退到 FSP 内嵌的原生相对 H5 引用。
 
-Reusable role: verify one candidate, working, or best-solution result package
-before reporting, moving, or deleting any Optimization artifacts.
+可复用用途：在报告、移动或删除任何 Optimization 产物前，验证 candidate、
+working 或 best-solution 结果包的完整性。
 """
 
 from __future__ import annotations
@@ -30,16 +29,16 @@ from _artifact_utils import (
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Audit an FSP/H5/p0 result bundle without Lumerical."
+        description="在不打开 Lumerical 的情况下审计 FSP/H5/p0 结果包。"
     )
-    parser.add_argument("fsp", type=Path)
-    parser.add_argument("--h5", type=Path, help="Explicit sidecar H5 path")
-    parser.add_argument("--p0-log", type=Path, help="Explicit p0 log path")
-    parser.add_argument("--require-log", action="store_true")
-    parser.add_argument("--expect-fsp-sha256")
-    parser.add_argument("--expect-h5-sha256")
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("fsp", type=Path, help="待审计的 FSP 文件")
+    parser.add_argument("--h5", type=Path, help="显式指定 sidecar H5 路径")
+    parser.add_argument("--p0-log", type=Path, help="显式指定 p0 日志路径")
+    parser.add_argument("--require-log", action="store_true", help="要求成功 p0 日志")
+    parser.add_argument("--expect-fsp-sha256", help="期望的 FSP SHA-256")
+    parser.add_argument("--expect-h5-sha256", help="期望的 H5 SHA-256")
+    parser.add_argument("--output", type=Path, help="JSON 审计输出路径")
+    parser.add_argument("--strict", action="store_true", help="任一门禁失败时返回非零退出码")
     args = parser.parse_args()
 
     fsp = args.fsp.resolve()
