@@ -4,6 +4,9 @@
 This script is read-only except for the optional JSON output. Paths are
 resolved against ``--root`` and must remain inside it unless
 ``--allow-outside-root`` is explicitly supplied.
+
+Reusable role: create a deterministic, machine-readable inventory of project
+inputs and deliverables for pre-run, reopen, archive, and cleanup audits.
 """
 
 from __future__ import annotations
