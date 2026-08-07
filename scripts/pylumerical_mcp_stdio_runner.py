@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Run an ordered PyLumerical MCP scenario over stdio.
+"""通过标准输入输出按顺序执行可审计的 PyLumerical MCP scenario。
 
-This is an MCP client, not a solver wrapper. It never imports ``lumapi``.
-Actual solver calls remain subject to the Skill authorization and visible-GUI
-gates; use ``open_session(..., hide=false)`` in scenarios that are authorized
-to run. A scenario may load a tool argument named ``code`` from ``code_file``
-and inject a JSON object as ``CODEX_CONTEXT`` with ``code_context``.
+本脚本是 MCP 客户端，不是求解器封装，也不会导入 ``lumapi``。实际 solver
+调用仍受 Skill 授权和可见 GUI 门禁约束；获准运行时必须在 scenario 中使用
+``open_session(..., hide=false)``。scenario 可通过 ``code_file`` 载入 ``code``，
+并通过 ``code_context`` 把 JSON 对象注入为 ``CODEX_CONTEXT``。
 
-Reusable role: execute ordered, reviewable PyLumerical MCP scenarios while
-keeping long UTF-8 Python code in project files instead of one-off snippets.
+可复用用途：执行有序、可复核的 PyLumerical MCP 流程，把较长的 UTF-8 Python
+代码保存在项目文件中，避免关键逻辑只存在于一次性代码片段。
 """
 
 from __future__ import annotations
@@ -205,15 +204,18 @@ def _compact_tool_result(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a PyLumerical MCP scenario.")
-    parser.add_argument("scenario", type=Path)
+    parser = argparse.ArgumentParser(description="执行 PyLumerical MCP scenario。")
+    parser.add_argument("scenario", type=Path, help="scenario JSON 文件")
     parser.add_argument(
-        "--config", type=Path, default=Path.home() / ".codex" / "config.toml"
+        "--config",
+        type=Path,
+        default=Path.home() / ".codex" / "config.toml",
+        help="Codex MCP 配置文件",
     )
-    parser.add_argument("--timeout", type=float, default=240.0)
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--timeout", type=float, default=240.0, help="默认超时秒数")
+    parser.add_argument("--output", type=Path, help="执行 envelope JSON 输出路径")
     parser.add_argument(
-        "--dry-run", action="store_true", help="Validate scenario and code files only"
+        "--dry-run", action="store_true", help="只校验 scenario 与代码文件，不连接 MCP"
     )
     args = parser.parse_args()
 
