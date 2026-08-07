@@ -4,6 +4,9 @@
 The script never opens Lumerical, runs a solver, saves an FSP, or changes the
 input bundle. It checks the deterministic same-name sidecar first and falls
 back to native relative H5 references embedded in the FSP.
+
+Reusable role: verify one candidate, working, or best-solution result package
+before reporting, moving, or deleting any Optimization artifacts.
 """
 
 from __future__ import annotations
