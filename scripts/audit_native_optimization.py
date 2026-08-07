@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Audit native Lumerical Optimization generations from filesystem artifacts.
+"""根据文件系统产物审计原生 Lumerical Optimization 各代完整性。
 
-Completion requires a nonempty candidate FSP, a successful candidate p0 log,
-and one nonempty referenced GPU H5 sidecar. This is a read-only filesystem
-audit; it does not claim native FOM/history availability and never starts or
-attaches to Lumerical.
+完整 candidate 必须同时具有非空 FSP、成功 p0 日志和一个非空的引用 GPU H5
+sidecar。本脚本只读审计文件系统，不宣称原生 FOM/history 可用，也不会启动或
+连接 Lumerical。
 
-Reusable role: count only complete FSP+p0+H5 candidate bundles by generation
-without repeatedly opening large FSP files or launching a solver.
+可复用用途：按代只统计完整的 FSP+p0+H5 candidate 结果包，避免反复打开大型
+FSP 或启动求解器。
 """
 
 from __future__ import annotations
@@ -55,15 +54,15 @@ def candidate_record(fsp: Path, summary_only: bool) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Audit native Optimization candidate result bundles."
+        description="审计原生 Optimization candidate 结果包。"
     )
-    parser.add_argument("working_fsp", type=Path)
-    parser.add_argument("--optimization-name", required=True)
-    parser.add_argument("--generation-size", type=int, required=True)
-    parser.add_argument("--maximum-generations", type=int)
-    parser.add_argument("--summary-only", action="store_true")
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("working_fsp", type=Path, help="Optimization working FSP")
+    parser.add_argument("--optimization-name", required=True, help="原生 Optimization 名称")
+    parser.add_argument("--generation-size", type=int, required=True, help="每代 candidate 数")
+    parser.add_argument("--maximum-generations", type=int, help="计划最大代数")
+    parser.add_argument("--summary-only", action="store_true", help="只输出代际摘要")
+    parser.add_argument("--output", type=Path, help="JSON 审计输出路径")
+    parser.add_argument("--strict", action="store_true", help="发现不完整 candidate 时返回非零退出码")
     args = parser.parse_args()
 
     if args.generation_size <= 0:
