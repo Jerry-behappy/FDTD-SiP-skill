@@ -63,6 +63,7 @@
 
 - 每个优化变量只代表一个可解释的物理自由度。旧变量若同时控制多个物理上独立的taper、MMI段或接入波导，先为目标结构新增专用属性；新属性的名义值设为旧值，使拆分前后名义几何坐标一致。
 - 原生Optimization和参数扫描直接指向真实structure-group属性路径，例如 `::model::MMI::T_W2`；不得优化空controller别名、未被setup读取的变量或顶层重复属性。
+- 对外参数名必须直接说明器件段和物理量，例如 `Length_Bulge`、`Width_Bulge_Plateau`、`Width_TaperInput`；清理 `A_L`、`B_H`、单字母 `L/W` 等无法从GUI判断含义的遗留名称。固定taper/直波导参数保留为可见group属性时，从Optimization参数列表移除并在参数表标记fixed。
 - 顶层controller使用带作用域前缀的局部变量读取group属性，避免与对象属性同名造成遮蔽。controller只移动具有真实物理依赖的对象，不得为了“全部联动”而强行改变无关边界。
 - 变量改变后读取实际polygon顶点、对象bbox和全局坐标；不能只证明user property数值改变。
 
@@ -101,6 +102,7 @@
 5. 恢复名义参数后保存candidate，关闭并在独立会话重开复核。只有用户明确授权覆盖目标文件时，才替换目标；替换后再次重开并记录SHA256与参数/坐标读回。
 6. manifest分别记录 `runsetup_used`、`switchtolayout_called`、`solver_run`、`runsweep_called` 和 `findmodes_called`。`runsetup()`不等于求解器运行；没有授权不得调用。磁盘文件重开后若已是Layout，不因旧截图显示Analysis而调用 `switchtolayout()`。
 7. 进程存在不构成本任务求解证据。按命令行、工作目录和FSP路径识别进程归属；绝不终止、修改或复用其他任务的solver进程。
+8. 用户在GUI中手工修改并保存group变量、setup script、对象名或monitor位置后，之前的SHA、坐标、绑定和Optimization路径审计全部视为过期；从最新磁盘文件重新建立基线和差异。目标FSP仍在用户GUI中打开时不自动覆盖保存，改用fresh副本或等待用户关闭。
 
 ## 6. 网格与资源门禁
 
@@ -133,6 +135,8 @@ fdtd.setexpansion(expansion_name, dft_name)
 
 每个 source-specific working copy 只能启用一个 source（`src_TE0` 或 `src_TM0`）。基线中所有 source 可保留但均禁用；working copy 中删除未使用 expansion，保留输出 DFT。删除仅限运行副本，绝不修改不可变 pre-run 基线。
 
+重命名DFT或mode expansion后，立即重做 `setexpansion`，并同步修改Optimization/Sweep result路径及FOM脚本中的对象名；随后执行setup/readback并在独立重开时再次核对。对象位置重合但绑定仍指向旧名称时，结果可能显示在对象列表中却无法计算，必须作为配置错误停止。
+
 | 器件 | 输入源 | 激活 expansion | 交付曲线与语义 |
 |---|---|---|---|
 | MMI PBS/PSR | TE0 | `T1_TE0`、`T2_TE0` | T1 TE 损耗（目标）与 T2 TE 损耗（另一输出端） |
@@ -151,9 +155,16 @@ fdtd.setexpansion(expansion_name, dft_name)
 3. 每个输入偏振使用独立source-specific working copy，且仅启用一个真实输入source；输出DFT与expansion按第8节映射。实际求解必须使用可见会话，并保留candidate参数、FSP、日志和原生结果。
 4. FOM在归一化线性功率域定义，明确目标端口/模式、带宽聚合、惩罚项、权重和约束；正损耗或负dB只用于报告，不在未说明时混入FOM。验收阈值与优化目标分开记录。
 5. 使用Lumerical原生Optimization时，读回optimizer对象的实际parameter path、范围、算法、generation、population、FOM绑定和状态；配置存在不等于某一代已完成。
-6. 只有一代的全部candidate完成、结果数量正确且汇总原子写入后，才能更新该代最佳与全局最佳。部分代、失败重试或空结果不得覆盖最近完整代的最佳值。
-7. 用户要求停止时立即停止新增candidate，保留最近完整代、当前部分代、全局最佳、state/history和日志；不得为“补齐一代”继续求解。
-8. 最优值位于参数边界时标记 `boundary-best`，不自行扩大范围。最终最佳必须从干净Layout/不可变pre-run独立复验，不能把优化缓存或已有结果重绘当作重跑。
+6. 原生Optimization只调用一次 `runsweep(optimization_name,resource)`，Lumerical会自动推进后续各代；不得把Optimization改写成普通Sweep或每代重复调用。保持启动Optimization的可见PyLumerical会话存活，直至终态和原生history/result提取完成。连接中断时先只读核对solver、代目录、p0日志和state，避免重复启动同一任务。
+7. 首次验证Optimization链路时，可在用户授权的低mesh或极小population×generation上使用独立pilot；pilot只验证source、FOM、GPU、candidate保存和结果提取。正式mesh从干净Layout创建新的working FSP，不继承pilot缓存、history或candidate。
+8. 对可分段级联的模式转换器，只有在中间截面、目标中间模式、传播方向和均匀接入波导已明确时，才允许把长器件拆成独立stage优化以缩短计算时间；每段使用自己的source/expansion和FOM。分段最佳不能直接宣称全器件最佳，之后必须用fresh完整级联working FSP做转换与泄露复验。
+9. 对GPU Optimization，将每个candidate视为不可拆分结果包：`candidate.fsp`、成功的`candidate_p0.log`和相邻同名目录中的`candidate/candidate_output.h5`。仅当三者存在、H5非空且名称对应时增加完成计数；不得按FSP数量、p0日志数量或solver退出码单独判定。轮询先检查确定性同名路径，只在缺失或名称异常时读取FSP二进制中的相对H5引用。
+10. `resave files after analysis=1` 只表示analysis后重新保存candidate FSP，不会把GPU monitor数据嵌入FSP，也不能替代H5完整性检查。禁止在结果归档前调用`switchtolayout()`；切回Layout并保存会删除外部GPU结果。
+11. 原生 `*_best_solution.fsp` 通常是candidate FSP的复制品，内部仍可能引用该candidate的相对H5路径。每次全局最佳变化后立即解析该引用，在best-solution FSP所在目录补齐完全相同的相对sidecar目录，同时向稳定归档位置原子复制“best FSP + sidecar目录”。记录原candidate、相对路径、字节数和FSP/H5 SHA256；目标已存在但SHA不符时停止，不覆盖。
+12. 在删除旧generation目录、暂停清理或移动best FSP前，先完成第11步。若被引用的candidate sidecar已经丢失，不能靠重新保存旧FSP、重算mode expansion或复制其他candidate H5修复；将其标记为不可恢复结果包并保留故障路径证据。
+13. 只有一代的全部candidate结果包通过第9步、结果数量正确且汇总原子写入后，才能更新该代最佳与全局最佳。部分代、失败重试、空结果或缺sidecar candidate不得覆盖最近完整代的最佳值。原生history尚未落盘时，只能对p0成功且sidecar完整的稳定candidate做无run、无save只读诊断，并标记为 `partial-generation diagnostic`。
+14. 用户要求停止时立即停止新增candidate，保留最近完整代、当前部分代、全局最佳、state/history、candidate结果包和日志；不得为“补齐一代”继续求解。
+15. 最优值位于参数边界时标记 `boundary-best`，不自行扩大范围。最终最佳必须从干净Layout/不可变pre-run应用同一参数，在同一solver、mesh、波段和可见会话中独立复验；保存新的working FSP及其GPU sidecar。关闭后从最终交付位置只读重开，要求Analysis mode、目标mode-expansion `getresult()`成功、点数/有限值正确且H5 SHA匹配。旧best缺sidecar时，这次独立复验同时是唯一有效修复，不得把优化缓存或已有结果重绘当作重跑。
 
 ## 10. 工况、运行与结果读取
 
@@ -226,5 +237,7 @@ fdtd.setexpansion(expansion_name, dft_name)
 - [ ] 每个工况只有一个 source 启用；输入端无 DFT；激活 expansion 与输出 DFT 已用 `setexpansion` 绑定。
 - [ ] FDE 已确认物理 TE0/TM0、source direction 和 mode selection。
 - [ ] GPU 系统检查、显存检查、引擎/会话证据与 working FSP 的 Analysis-mode 结果均已保存。
+- [ ] GPU Optimization的每个完成candidate均通过“FSP + p0成功日志 + 非空同名H5”门禁；best-solution的准确相对sidecar已在清理前捆绑归档并校验SHA256。
+- [ ] 原生Optimization仅启动一次且拥有会话保持到history/result提取完成；pilot与正式mesh使用独立working空间，部分代诊断未覆盖完整代最佳。
 - [ ] 每个数据集波段和采样点数正确；无空结果或未授权降精度/转 CPU。
 - [ ] working FSP、外部 `.h5`、图、CSV、原始数据、日志和 manifest 可作为一组从交付位置独立重开复核；不要求额外 Analysis FSP。

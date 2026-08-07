@@ -50,7 +50,7 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 7. **扫描或优化**：使用用户确认的变量、范围、约束、算法和停止条件；原子保存state/history与全局最佳。
 8. **独立复验**：从干净Layout应用最佳参数独立运行；边界最优标记为 `boundary-best`，不自动扩大范围。
 9. **高精度/宽带验证**：使用独立工程完成mesh、mode/cell或波长验证；未经多档比较不声称收敛。
-10. **重开与交付**：从独立会话读取原生结果、生成数据与图、保存SHA256；分别保留不可变pre-run快照、运行工作副本和Analysis工程，确认可重开后再按授权清理。
+10. **重开与交付**：从独立会话读取原生结果、生成数据与图、保存SHA256；以不可变pre-run和完成求解的working FSP（含外部H5）为主要真值。除非用户明确要求，不额外创建Analysis FSP；确认working结果包可重开后再按授权清理。
 
 ## 求解器选择
 
@@ -67,6 +67,7 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 
 - 顶层controller管理材料、全局尺寸、求解参数和优化变量；structure group只重建材料几何，不读取仿真结果。
 - 每次setup先清理该结构组的旧子对象，再按确定顺序重建；对象名、参数名、结果字段使用一致的物理语义。
+- 对外user property、Optimization变量和关键子对象使用能直接定位物理区域的英文全名，例如 `Length_Bulge`、`Width_TaperInput`、`Output_wg`；禁止继续暴露 `A_L`、`B_H`、单独的`L/W`等需猜测的缩写。固定参数可以保留为可见属性，但必须从Optimization参数表移除并在manifest标明fixed。
 - 直接用方程和参数范围保证单调性、连接和最小间隔；避免用clamp把不同非法候选映射为同一几何。
 - 输入/输出直波导延伸穿过相关PML，port/source和monitor放在均匀直波导或均匀介质内。FDTD边界不要无必要地进入高折射率substrate。
 - 曲线使用基于弦高误差的自适应离散；审计实际最大弦高、顶点数、切线连续性和自交。
@@ -113,6 +114,7 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - **EME port 放置与坐标模式硬性检查**：EME port 是 `EME::Ports` 下的 solver 子对象，必须显式设置并回读 `use relative coordinates`。优先使用相对坐标放置端口：局部坐标按 `port_local = target_global - EME_origin_global` 计算，输入/输出端的局部 x 应分别对应 EME 左/右边界，局部 y/z 应使换算后的全局中心与目标波导核心中心一致。若改用绝对坐标，必须在同一次原子更新中重写全部 x/y/z；禁止只切换复选框而沿用旧坐标值。`port location=left/right` 不能替代坐标审计。保存前及独立重开后同时记录：坐标模式、端口局部/绝对 x/y/z、EME 全局原点、换算后的端口全局坐标、目标波导端面全局坐标和三轴偏差；只有端口平面位于对应波导端面、横向中心偏差为零且窗口完整覆盖核心时才算放置通过。
 - power monitor测总净功率；mode expansion测目标模式正反向功率；field/index monitor只为必要审计开启。FDTD Port已经提供任务所需的复数S参数/模式功率时，不再在同一截面添加重复的power monitor；只有需要独立能量闭合、辐射/非目标模式总功率或不同截面诊断时才额外添加，并在manifest记录其独立用途。
 - 宽带power/expansion覆盖完整波段且包含中心波长。field monitor默认只记录中心波长，除非确需场频谱。
+- 重命名或移动DFT/mode-expansion后，在同一次原子更新中重新执行 `setexpansion(expansion,dft)`，并同步修改Optimization/Sweep result路径与FOM脚本中的对象名；保存前和独立重开后从准确路径回读绑定。旧result缓存、旧对象路径或仅GUI同位置都不能证明绑定有效。
 - 保存结果后重开，复核selected mode、偏振、波长点、归一化、传播方向和结果缓存。
 
 ## Mesh、边界与执行门禁
@@ -133,9 +135,15 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 
 - 在明确的线性功率域定义FOM，并在metadata记录公式、权重、方向、模式和monitor/result路径。
 - 优先使用Lumerical原生Optimization处理连续变量；计划中明确算法、变量、范围、约束、generation size、最大代数、容差和随机策略。
+- 原生Optimization只调用一次 `runsweep(optimization_name,resource)`；Lumerical随后自动推进各代。保持启动它的可见PyLumerical会话存活到终态并在关闭前提取原生history/result；不得按代重复启动。MCP连接中断时先只读检查solver、generation目录、p0日志和state，确认原任务已终止后才允许新启动。
+- 首次验证数据链路时，可在用户授权的较低mesh或极小population/generation上运行独立pilot；pilot只验证solver、FOM、候选保存和结果读取，不代表优化效果。正式mesh必须从干净Layout创建新的working FSP，不得把pilot结果或状态续接为正式Optimization。
 - 优化参数盒应天然满足制造约束。可在仿真前拒绝自交、断开或非法尺寸；模式映射、缓存和求解器异常必须停止任务，不能当普通低FOM候选。
 - 每个候选或每代原子保存state/history；保留全局最佳、独立复验和用户要求的代际结果。不要只相信 `runsweep()` 返回，立即验证原生result和完整history。
+- **GPU Optimization结果捆绑硬门禁**：GPU candidate只有在candidate FSP、成功p0日志及其同目录同名sidecar `<candidate>/<candidate>_output.h5` 均存在且H5非空时才能计为完成；不得仅按FSP数量或成功日志计数。轮询时先检查确定性的同名sidecar路径，只在路径异常时读取FSP内嵌引用，避免反复扫描大型FSP。
+- 原生 `*_best_solution.fsp` 可能引用某一candidate的相对H5路径。每次全局最佳更新后、清理任何代目录前，原子保存“best-solution FSP + 引用路径完全一致的sidecar目录”，并校验FSP/H5大小和SHA256；禁止只复制或重命名FSP。`resave files after analysis=1` 只要求analysis后重存candidate FSP，不会把GPU monitor数据嵌入FSP，也不能替代sidecar门禁。
+- 交付前从最终位置独立重开best/working FSP，要求Analysis mode、目标 `getresult()` 成功、schema/点数/有限值正确且sidecar SHA匹配。若引用的H5已丢失，旧FSP结果不可无损恢复；保留故障证据，从干净Layout应用同一最佳参数，以同一solver、mesh和波段显示重跑生成新的working FSP+sidecar，不用重新保存旧FSP冒充修复。
 - 原生PSO按“完整一代”提交代际快照：记录计划粒子数、已提取粒子数、该代最佳、累计最佳、边界状态和时间戳。部分代不得覆盖上一完整代的全局最佳，也不得用于最终3D结构，除非用户明确选择该候选并完成独立复验。
+- 运行中若原生history尚未落盘，只能对“p0成功且sidecar完整”的稳定candidate做无run、无save只读诊断，并明确标记 `partial-generation diagnostic`；它不能冒充完整代最佳，也不能覆盖上一完整代最佳。
 - 将效率目标与FOM分离：目标值只是验收阈值，不得为追求目标而改符号、归一化或篡改Optimization FOM。总运行上限必须与 `generation size × maximum generations` 一致；暂停、停止和续跑遵守用户最近指令，不重复启动仍在运行的Optimization。
 - 优化只负责既定精度层级；提高mesh、切换求解器或启动最终宽带均需要计划中已有授权或新的明确授权。
 - 形状优化先基于失效机理收缩参数空间：若弯曲损耗不是主要问题，应优先优化中心分光/散射区域，固定输入/输出直波导、端口坐标和低影响长弯曲。参数数量、粒子数和代数要与计算预算一起显式记录；用户要求简化时，先减少物理冗余参数而不是改变FOM定义。
@@ -160,7 +168,7 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 ```text
 <project>/
 ├── src/       # UTF-8建模、运行、提取与审计脚本
-├── projects/  # Layout、Optimization和Analysis工程
+├── projects/  # Layout/Optimization模板与working结果工程
 ├── data/      # CSV/JSON/NPZ/MAT/HDF5与manifest
 ├── figures/   # 线性和负dB图、必要场图
 └── logs/      # MCP、controller、solver和GPU日志
@@ -168,8 +176,9 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 
 - FSP/LMS依赖外部HDF5时，将工程和数据目录作为不可拆分的一组移动、重命名和归档。
 - 路径含空格导致Lumerical脚本或批处理截断时，优先迁移到项目内无空格目录并同步更新脚本、manifest和关联路径；不要在路径解析不可靠的状态下继续运行长任务。
-- 不同器件、mesh档位、优化候选和参数扫描验证使用独立运行空间；不要覆盖既有mesh档位、pre-run、Analysis或历史sweep结果。目录名中包含器件、候选、mesh和阶段语义，避免后续把敏感性比较误认为收敛。
-- 对正式运行保留三种不同语义：不可变pre-run快照、可被solver更新的运行工作副本、成功后的Analysis FSP。manifest分别记录运行前和运行后SHA256；若两者相同或pre-run被更新，必须如实标记，不能把运行后的文件冒充原始pre-run。
+- 不同器件、mesh档位、优化候选和参数扫描验证使用独立运行空间；不要覆盖既有mesh档位、pre-run、working结果或历史sweep结果。目录名中包含器件、候选、mesh和阶段语义，避免后续把敏感性比较误认为收敛。
+- 对正式运行至少分离不可变pre-run快照和可被solver更新的working结果包；working FSP进入Analysis mode后连同外部H5作为结果真值。仅在用户要求的工作流中额外创建Analysis FSP，且不得成为working/H5之外的第二套冲突真值。manifest记录运行前后SHA256；若pre-run被更新，必须如实标记。
+- 用户在GUI中手工保存参数、脚本、对象名或monitor位置后，旧SHA、坐标审计和绑定审计立即失效；先把最新磁盘FSP视为新输入并重新记录SHA/差异，再继续自动修改。不得覆盖用户当前仍打开的目标FSP；优先让用户关闭后处理，或改用新的fresh working副本。
 - 删除或 `switchtolayout()` 前先导出可复算数据、结果摘要、配置、日志和SHA256，并从交付位置成功重开。
 - 解析所有删除目标的绝对路径，确认位于项目根内；永久删除唯一Analysis、外部HDF5或有效优化历史需要用户明确授权。
 - 清理后更新manifest并确认PyLumerical `list_sessions` 为空。
@@ -195,7 +204,8 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - [ ] mesh、模式基组、纵向离散和宽带验证状态分别标注。
 - [ ] 最佳点从干净Layout独立复验；边界最佳已标记。
 - [ ] GPU或CPU执行证据、原生结果、图、manifest和SHA256完整。
-- [ ] 不可变pre-run快照、运行工作副本和Analysis FSP语义分离；Analysis只在solver成功返回Analysis mode后创建。
+- [ ] GPU Optimization的candidate与best-solution FSP均保留其准确相对路径的非空H5 sidecar；完成计数、SHA256和独立重开 `getresult()` 已通过。
+- [ ] 不可变pre-run与working结果包语义分离；working FSP/H5是结果真值，未在无明确需求时制造额外Analysis FSP。
 - [ ] Gaussian source没有被自动附加source mesh；若存在source mesh，已有明确理由、范围、显存和验证证据。
 - [ ] 最终工程与外部数据可从交付位置重开。
 - [ ] 清理符合授权，最终PyLumerical会话为空。
