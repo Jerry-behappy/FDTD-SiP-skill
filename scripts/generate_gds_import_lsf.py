@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generate a reviewable Lumerical LSF GDS reconstruction script from JSON.
+"""根据 JSON 生成可复核的 Lumerical GDS 几何重建 LSF 脚本。
 
-The generated LSF calls native ``gdsimport`` once per declared process layer.
-It does not execute Lumerical, modify the source GDS, or guess materials and Z
-bounds. Use ``audit_gds_geometry.py`` first, then explicitly map every required
-``layer:datatype`` to its material and optional 3D extrusion range.
+生成的 LSF 对每个声明的工艺层调用一次原生 ``gdsimport``。本脚本不执行
+Lumerical、不修改源 GDS，也不猜测材料和 Z 边界。应先运行
+``audit_gds_geometry.py``，再把每个必需的 ``layer:datatype`` 显式映射到
+材料和可选的三维拉伸范围。
 
-Reusable role: turn a checked GDS/process-layer mapping into a portable LSF
-reconstruction file for FDTD, MODE, EME, or varFDTD Layout projects.
+可复用用途：把已审计的 GDS/工艺层映射转换为可移植 LSF 重建文件，供
+FDTD、MODE、EME 或 varFDTD Layout 工程使用。
 """
 
 from __future__ import annotations
@@ -126,12 +126,12 @@ def build_lsf(config: dict[str, Any], config_path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("config", type=Path, help="UTF-8 JSON layer map")
-    parser.add_argument("--output", type=Path, help="generated .lsf path")
+    parser.add_argument("config", type=Path, help="UTF-8 JSON 工艺层映射")
+    parser.add_argument("--output", type=Path, help="生成的 .lsf 文件路径")
     parser.add_argument(
         "--allow-overwrite",
         action="store_true",
-        help="replace an existing generated LSF",
+        help="覆盖已存在的生成 LSF",
     )
     args = parser.parse_args()
 
