@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Build a deterministic SHA-256 manifest for files in a project.
+"""为项目文件生成确定性的 SHA-256 manifest。
 
-This script is read-only except for the optional JSON output. Paths are
-resolved against ``--root`` and must remain inside it unless
-``--allow-outside-root`` is explicitly supplied.
+除可选 JSON 输出外，本脚本只读。所有路径都相对 ``--root`` 解析；除非显式
+提供 ``--allow-outside-root``，否则路径必须位于 root 内部。
 
-Reusable role: create a deterministic, machine-readable inventory of project
-inputs and deliverables for pre-run, reopen, archive, and cleanup audits.
+可复用用途：为 pre-run、重开、归档和清理审计生成确定且机器可读的项目输入
+与交付文件清单。
 """
 
 from __future__ import annotations
@@ -37,22 +36,22 @@ def expand_path(path: Path) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Create a JSON SHA-256 manifest without modifying inputs."
+        description="在不修改输入文件的情况下生成 JSON SHA-256 manifest。"
     )
-    parser.add_argument("paths", nargs="+", type=Path, help="Files or directories")
-    parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("paths", nargs="+", type=Path, help="文件或目录")
+    parser.add_argument("--root", type=Path, default=Path.cwd(), help="项目根目录")
+    parser.add_argument("--output", type=Path, help="JSON manifest 输出路径")
     parser.add_argument(
         "--exclude",
         action="append",
         default=[],
-        help="Repeatable glob matched against root-relative POSIX paths",
+        help="按 root 相对 POSIX 路径匹配的可重复 glob",
     )
-    parser.add_argument("--allow-outside-root", action="store_true")
+    parser.add_argument("--allow-outside-root", action="store_true", help="允许审计 root 外部文件")
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Return nonzero when inputs are missing or outside root",
+        help="输入缺失或位于 root 外时返回非零退出码",
     )
     args = parser.parse_args()
 
