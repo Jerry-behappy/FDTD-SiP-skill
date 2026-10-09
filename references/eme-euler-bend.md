@@ -9,9 +9,10 @@
 5. [EME cell groups与模式映射](#eme-cell-groups与模式映射)
 6. [基线、优化与独立复验](#基线优化与独立复验)
 7. [收敛与高保真验证](#收敛与高保真验证)
-8. [宽带、S矩阵与图表](#宽带s矩阵与图表)
-9. [结果归档与清理](#结果归档与清理)
-10. [验收检查表](#验收检查表)
+8. [3D FDTD弯曲波导的贴边mesh与内存预检](#3d-fdtd弯曲波导的贴边mesh与内存预检)
+9. [宽带、S矩阵与图表](#宽带s矩阵与图表)
+10. [结果归档与清理](#结果归档与清理)
+11. [验收检查表](#验收检查表)
 
 ## 适用范围与任务确认
 
@@ -137,6 +138,28 @@ FOM优先在明确的线性功率域定义，可组合目标模式透射、串�
 
 3D FDTD验证点使用独立工程，重新审计边界、source/mode expansion、mesh和传播方向；正式GPU运行前在精确pre-run FSP做system check并保留GPU证据。
 
+## 3D FDTD弯曲波导的贴边mesh与内存预检
+
+### 几何与mesh覆盖
+
+- 从PDK/GDS建模时，先用原生PDK参数生成目标弯曲，再独立重读GDS的DBU、层/数据类型、Si轮廓、连通性、端点和bbox。只有横向Si版图时，Si厚度、BOX、top cladding和材料仍须从项目工艺约定或用户输入确定；GUI的 `alpha` 仅改变显示透明度。
+- 用户要求mesh“跟着弯曲波导带一层buffer”时，buffer从**Si实际外边缘**量起，不从中心线或整个器件bbox量起。可将Si polygon组成 `pya.Region`，按 `round(buffer/dbu)` 做区域外扩；沿选定坐标轴（例如x轴）用窄切片覆盖外扩区域，并将各切片内的局部bbox转换为Lumerical矩形mesh override。`z` 范围覆盖Si上下表面并各加同一指定buffer。切片间要相接或重叠；记录mesh区域数量、外扩Si面积、mesh并集面积及目标区域之外的多余覆盖面积，并要求 `外扩Si区域 - mesh并集` 的面积为零。切片宽度是近似精度/区域数量的选择，不是物理buffer。
+- 输入和输出均匀直段的mesh延伸至各自port平面，并按计划的纵向裕量跨过port；横向从access波导Si边缘外扩buffer，垂向与弯曲段一致。几何审计要证明两端access mesh与弯曲mesh相交、没有断带，且port截面附近的波导及所需包层都在局部mesh内。端口仍应放在均匀直段，并单独审计其模式窗口、方向和source/结果定义。
+- FDTD `mesh accuracy` 与局部mesh的 `maximum mesh step` 是不同参数；建立每个override时显式启用x/y/z覆盖并设置、回读 `dx/dy/dz`。保存后独立重开精确候选FSP，检查实际区域、步长、材料、port和monitor；不能只凭规划脚本或GUI截图认定覆盖有效。
+
+### 监视器与内存边界
+
+- 若只需端口透射光谱，完整XY电场DFT monitor属于可取消的高内存诊断输出；保留必要的原生port结果。稀疏采样的index截面可单独用于材料审计，不能把index monitor称为XY电场监视器，也不能将两者的内存代价混为一谈。删改monitor后保存新的Layout/pre-run，并重新估算内存。
+- 对每组 `R_min`、buffer、`dx/dy/dz` 和monitor配置保存独立的精确候选FSP及SHA256，独立重开后运行 `runsystemcheck("FDTD","GPU")` 读取GPU最大估计，并用 `runsystemcheck("FDTD","CPU")` 读取主机初始化/划网格及运行阶段估计；后者是GPU求解前的**主机内存预检**，不意味着改用CPU求解。记录检查时的空闲主机RAM、空闲GPU显存、各阶段估计值、余量和检查器警告；主机门禁使用相关阶段的较高估计。采用项目预先确定的安全裕量，例如主机和GPU估计均低于各自当时可用内存的90%；裕量随机器负载和风险要求调整，不将90%当成物理定律。
+- 主机RAM与GPU显存任一门禁失败、估计警告显著或余量极小，都不要把候选标为可稳妥运行；不自动改粗mesh、缩buffer或切CPU。通过预检只说明该离散候选在该时刻**估计**满足门禁，不能保证实际峰值、求解成功或mesh收敛。尤其靠近主机RAM上限时，conformal mesh的CPU估计可能偏差较大。
+- 问“mesh能划到多小”时，按固定buffer和其余配置扫描有界的离散候选，分别列出最细的已测通过/失败值及安全余量。若只做Layout和system check，标记 `solver_calls=[]`；不能把离散扫描边界写成连续意义上的最小可行步长。改变buffer后必须重新建模、重开、预检，旧内存结果不沿用。
+
+### 执行与半径对比
+
+- 得到明确运行授权后，先锁定不可变pre-run及其SHA256，从独立working副本在可见 `hide=false` 会话运行指定CPU/GPU资源。只有求解返回、Analysis mode与solver status正确、外部H5/端口数据可读，并且从最终交付位置独立重开成功，才称该点完成。保留p0日志、资源证据、原生port复数S/功率、波长数组和文件哈希。
+- 同一组半径比较应固定工艺、宽度、波段/采样、端口模式、边界、monitor、buffer及局部mesh步长等数值口径；几何包络会随半径自然变化。若内存限制迫使某半径使用不同buffer，图例、逐点CSV和manifest都要标出每点的 `R_min + buffer + dx/dy/dz`，并说明该图是**不同数值配置的结果并列**，不能将差值全归因于半径。单档mesh或仅通过内存门禁不构成收敛。
+- 透射功率先按已核对的port方向/归一化从原生S计算，例如目标模式 `eta=|S_out,in|^2`；反射单独提取。保存逐波长线性效率和 `10*log10(eta)` 负dB双图、同色同采样CSV，并按下文规则保留零值与无效值。
+
 ## 宽带、S矩阵与图表
 
 两端口各保留 `N` 个模式时，保存完整 `2N×2N` 复数S矩阵和 `|S|^2` 功率矩阵；`N`由任务定义，不硬编码。一次有效的EME propagate已经包含正反向系数，不为互易元素重复求解。
@@ -179,6 +202,8 @@ FOM优先在明确的线性功率域定义，可组合目标模式透射、串�
 - [ ] EME groups由当前profile动态生成，实际span、curvature、cells和basis已读回。
 - [ ] 端口模式按物理属性映射，未用错误偏振补位。
 - [ ] mesh、basis modes、纵向sections、宽带和高保真验证分别标注。
+- [ ] 如使用3D FDTD贴边mesh，外扩Si与端口access均无覆盖缺口，buffer、步长和实际区域已独立重开回读。
+- [ ] GPU求解前同时记录主机RAM和GPU显存预检及余量；纯预检候选与实际Analysis结果清楚区分。
 - [ ] 最佳点从干净Layout独立复验；边界最佳已标记。
 - [ ] 完整复数S、功率矩阵、passivity、reciprocity和能量闭合已保存。
 - [ ] 线性与负dB图定义、采样和颜色一致。
