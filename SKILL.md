@@ -8,7 +8,7 @@ description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic d
 ## 核心原则
 
 - 使用中文回复，技术术语保留英文；建模与controller脚本使用UTF-8并包含可维护的中文注释。
-- 通过PyLumerical MCP控制Lumerical，不直接实例化 `lumapi`。把可复现的长流程保存为项目脚本，不让关键逻辑只存在于一次性snippet。
+- **skill与MCP必须同时使用**：每次调用本skill（`fdtd-sip-simulation`），必须同时使用 `pylumerical` MCP；不得仅加载skill而省略MCP。通过PyLumerical MCP控制Lumerical，不直接实例化 `lumapi`。把可复现的长流程保存为项目脚本，不让关键逻辑只存在于一次性snippet。
 - 先需求确认和Layout审计，再preflight、求解、结果重开和清理；每阶段使用独立状态与manifest。
 - `run()`、`runsweep()`/`emesweep()` 和 `switchtolayout()` 分别需要明确授权。不得把一次运行授权扩展到其他求解或丢弃结果。
 - **所有实际仿真必须显示运行**：凡调用 `run()`、`runsweep()`、`emesweep()`、`findmodes()` 或启动 FDTD/MODE/EME/varFDTD 的 CPU/GPU solver，必须以 `open_session(..., hide=false)` 打开并保持 Lumerical IDE/solver GUI 可见。纯 Layout 建模、无求解审计、controller、watcher、日志和归档脚本可以隐藏。
