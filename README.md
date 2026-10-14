@@ -187,3 +187,7 @@ python -X utf8 scripts\pylumerical_mcp_stdio_runner.py project_scenario.json --o
 - `configure_*` worker 拒绝 Analysis mode，也不会自动调用 `switchtolayout()`。
 - 保存工程时必须显式提供与源文件不同的 `save_as`；默认拒绝覆盖已有目标。
 - `audit_lumerical_project_via_mcp.py` 的数值摘要是通用数据质量检查，不替代器件专用物理指标和验收公式。
+
+## 致谢
+
+感谢周务飞同学对本人的仿真教学和帮助
