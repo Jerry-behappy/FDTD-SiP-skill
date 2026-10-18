@@ -83,7 +83,7 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 - 每次setup先清理该结构组的旧子对象，再按确定顺序重建；对象名、参数名、结果字段使用一致的物理语义。
 - 对外user property、Optimization变量和关键子对象使用能直接定位物理区域的英文全名，例如 `Length_Bulge`、`Width_TaperInput`、`Output_wg`；禁止继续暴露 `A_L`、`B_H`、单独的`L/W`等需猜测的缩写。固定参数可以保留为可见属性，但必须从Optimization参数表移除并在manifest标明fixed。
 - 直接用方程和参数范围保证单调性、连接和最小间隔；避免用clamp把不同非法候选映射为同一几何。
-- 输入/输出直波导延伸穿过相关PML，port/source和monitor放在均匀直波导或均匀介质内。FDTD边界不要无必要地进入高折射率substrate。
+- 输入/输出直波导延伸穿过相关PML，port/source和monitor放在均匀直波导或均匀介质内。非光栅器件的FDTD边界不要无必要地进入高折射率substrate；光栅耦合器按衬底通道建模规则处理。
 - 曲线使用基于弦高误差的自适应离散；审计实际最大弦高、顶点数、切线连续性和自交。
 - 每次参数变化后执行setup并读取实际全局坐标，不只检查user property。
 - 从GDS重建器件时，只导入或解析任务需要的工艺层；端口标记、边界参考和器件轮廓要分开处理。端口标记层只用于定位和宽度参考，不应被误导入为硅器件几何。
@@ -95,12 +95,12 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 
 ### SOI基础层叠
 
-- Si芯层、BOX、top cladding和可选substrate使用用户给定、PDK或输入文件审计得到的工艺值；禁止把某次工程厚度写成通用默认值。
+- Si芯层、BOX、top cladding和任务规定的substrate使用用户给定、PDK或输入文件审计得到的工艺值；禁止把某次工程厚度写成通用默认值。
 - 以Si芯层中心 `z_si` 和厚度 `h_si` 定义 `si_z_min=z_si-h_si/2`、`si_z_max=z_si+h_si/2`。BOX连续占据 `[si_z_min-h_box, si_z_min]`；若建substrate，其顶面与BOX底面相接。
 - top cladding从 `si_z_min` 连续延伸到项目定义的上边界，并在横向覆盖器件与求解区余量。它应包围Si并填充全刻蚀槽，不能在Si侧壁、槽底或BOX顶面留下非设计空气缝。
 - top cladding的 `graphical rendering` 中 `alpha` 默认设为 `0.2`；仍需通过材料、mesh order和index截面验证物理结构，不能把透明度当作材料证据。
 - 浅刻蚀使用“连续残余slab + 上层未刻蚀Si”或等价的显式差集；全刻蚀槽贯穿完整Si器件层；多刻蚀深度分别建立各层边界。不得用错误的对象优先级把残余slab意外清空。
-- FDTD若无需substrate，z-min留在BOX内部并记录剩余BOX厚度；若包含substrate，则明确材料、厚度、边界距离及其对泄漏/反射的影响。
+- 光栅耦合器默认把Si substrate纳入FDTD，检查向衬底的辐射与反射；只有用户明确要求理想化无衬底模型时才可省略，并在manifest标注。衬底顶面与BOX底面连续相接、连续穿过底部PML；其有限深度必须用改变深度的中心波长检查确认，不能把“下边界停在BOX内”当作光栅仿真的默认。非光栅器件若无需substrate，才可按项目范围留在BOX内部并记录剩余厚度。
 
 ### Subtract、刻蚀与材料替换
 
@@ -212,7 +212,7 @@ PyLumerical MCP只是控制入口，不等于求解器或GPU已经工作。MODE 
 ## 最终验收
 
 - [ ] 需求、工艺、坐标、模式、FOM、资源和授权已明确。
-- [ ] Si、BOX、top cladding、可选substrate及所有subtract/刻蚀深度按工艺建立，z边界连续且没有非设计缝隙。
+- [ ] Si、BOX、top cladding及所有subtract/刻蚀深度按工艺建立，z边界连续且没有非设计缝隙；光栅耦合器已纳入Si substrate并完成深度/PML敏感性检查，或已明确标注理想化无衬底例外。
 - [ ] 参数化几何setup后通过连续性、最小特征、材料、端口/source、monitor和边界审计。
 - [ ] 所有重叠材料已回读mesh-order override与数值，并用index截面确认Si、槽、BOX和top cladding的实际解析结果。
 - [ ] 求解器与物理问题匹配，低成本优化和高保真验证没有混称。
