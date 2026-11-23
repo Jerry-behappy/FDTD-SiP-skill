@@ -118,7 +118,7 @@ Gaussian规则：
 - 将物理角度、Lumerical原生 `angle theta/phi`、注入轴和传播方向同时写入manifest；不能只看角度属性值判断方向。
 - offset统一定义为芯片目标平面的实际落点偏移。空气、top cladding或其他介质分段传播时，用折射关系从落点反算source坐标。
 - 距离或角度研究必须注明固定落点、固定source横坐标或每点重新对光，三种口径不得混用。
-- Lumerical v251 Gaussian GPU工作流保持 `frequency dependent profile=0`；在setup、保存、system check和正式运行前重新设置并读取确认。
+- Gaussian 光源入射光栅耦合器时开启 `frequency dependent profile=1`：宽带仿真中束宽与发散随波长变化，逐频率重新计算空间分布更符合光纤入射。setup、保存、system check 和正式运行前后都回读确认该值为 `1`。若仅中心波长单点运行，该选项无影响，但仍保持 `1` 以统一口径。
 
 若使用显式光纤，建立core/cladding/端面和光纤模式源，并将Fresnel反射及端面纳入模型；不再叠加Gaussian source。
 
@@ -168,7 +168,7 @@ GPU门禁：
 1. 完成setup、source、monitor、边界和mesh后保存精确pre-run FSP，记录运行前SHA256，关闭会话并独立重开审计。
 2. 将pre-run保存为不可变快照；另建运行工作副本。不要在唯一pre-run快照上调用solver，因为Lumerical可能原地更新当前FSP及同名外部结果目录。
 3. 在运行工作副本执行 `runsystemcheck("FDTD","GPU")`，记录最小/最大显存估算。几何审计后、正式运行前重新读取当前空闲显存；超过计划安全线即停止，不自动降mesh或转CPU。
-4. 正式运行前重新读取对称边界和 `frequency dependent profile=0`，显式选择GPU资源。
+4. 正式运行前重新读取对称边界和 `frequency dependent profile=1`，显式选择GPU资源。
 5. 只有 `run("FDTD","GPU")` 返回且会话处于Analysis mode后才保存Analysis FSP。门禁失败、中止、异常或返回Layout mode时不得创建或保留带Analysis语义的FSP。
 6. 用GPU资源配置、`fdtd-engine`进程、p0日志、显存、auto-shutoff、controller状态和最终Analysis结果共同证明GPU执行；任务管理器单个默认图表不是唯一证据。
 
@@ -188,8 +188,8 @@ GPU门禁：
 v251规则：
 
 - 新建频域monitor使用 `adddftmonitor`，静态扫描保证 `addpower(` 为0。
-- 不启用Gaussian `frequency dependent profile`；若出现dimension error，关闭污染会话，从干净FSP重开并先测试原生Transmission。
-- `frequency dependent profile=0`时日志中的narrowband spatial injection提示不代表DFT只计算单点；以source波段、monitor点数和重开波长数组判断宽带结果。
+- Gaussian 光源入射光栅耦合器时启用 `frequency dependent profile=1`；若出现 dimension error，关闭污染会话，从干净 FSP 重开并先测试原生 Transmission。
+- `frequency dependent profile=1`时日志中的 narrowband spatial injection 提示不代表 DFT 只计算单点；以 source 波段、monitor 点数和重开波长数组判断宽带结果。
 - 不把 `updatemodes("monitor")` 当作通用调用；先在对象属性中选模式并审计。
 - 结果FSP与同名外部HDF5目录作为不可拆分的一组移动、重命名和归档。
 - pre-run快照、运行工作副本和Analysis FSP不得混用命名或成功状态。manifest分别保存运行前/后SHA256、solver是否启动、Analysis是否创建、p0路径和最终会话模式；若运行工作副本被原地改写，不能把其运行后哈希当作原始pre-run哈希。
@@ -245,7 +245,7 @@ positive_loss_dB = -coupling_dB
 - [ ] grating local mesh与可选source mesh独立审计；用户要求不加source mesh时对象数为0；单档mesh没有被称为收敛。
 - [ ] 精确pre-run FSP已完成GPU system check，GPU执行证据完整。
 - [ ] 不可变pre-run快照、运行工作副本和Analysis保存顺序正确；失败路径不会留下伪Analysis。
-- [ ] `frequency dependent profile=0`在正式运行前后均已审计。
+- [ ] Gaussian 光源入射光栅耦合器的 `frequency dependent profile=1` 在正式运行前后均已审计。
 - [ ] 原生Transmission先于TE0读取；离线后处理限制已披露。
 - [ ] 线性图和负dB图的波长、采样、曲线和颜色一致。
 - [ ] 最终Analysis FSP与外部HDF5可从交付位置重开。
