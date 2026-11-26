@@ -19,6 +19,7 @@ description: General Ansys Lumerical 2025 R1 workflow for SOI silicon-photonic d
 
 ## 专用参考入口
 
+- MMI等分器的镜像taper参数化、MODE varFDTD半域验证、原生粒子群FOM和外机结果回收，见 [references/mmi-optimization.md](references/mmi-optimization.md)。
 - 光栅耦合器GDS复现、周期定义、Gaussian对光、原生Optimization、3D GPU宽带和GDS交付：完整读取 [references/grating-coupler-optimization.md](references/grating-coupler-optimization.md)。
 - 参数化欧拉/一般变曲率弯曲、FDE/varFDTD/EME/FDTD分工、曲率离散、S矩阵和弯曲优化：完整读取 [references/eme-euler-bend.md](references/eme-euler-bend.md)。欧拉专用参数和流程只维护在该文件，主skill不复制。
 - 偏振器件（PBS/PSR、起偏器、偏振旋转器和模式转换器）的参数语义隔离、structure group与仿真对象联动、PML直波导、TE/TM测量、原生Optimization/Parameter Sweep、结果交接和快速审计：完整读取 [references/polarization-device-simulation.md](references/polarization-device-simulation.md)。
