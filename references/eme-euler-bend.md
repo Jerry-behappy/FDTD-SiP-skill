@@ -41,7 +41,7 @@
 
 通过PyLumerical MCP操作：先读取 `workflow`、`pic` 和对应FDE/EME/FDTD guidelines，再 `list_sessions` / `open_session`。MODE EME/FDE在本机v251使用CPU；只有3D FDTD可按GPU流程执行。
 
-`run()`、`emesweep()`/其他sweep和 `switchtolayout()` 分别需要明确授权。EME GUI保持可见；不要在MCP snippet中重新导入或实例化 `lumapi`。
+按[主 skill 的任务范围](../SKILL.md#核心原则)执行求模、传播和扫描。实际求解使用可见的 PyLumerical MCP 会话。
 
 ## 通用参数化接口
 
@@ -114,7 +114,7 @@ EME纵向分段必须从当前曲率profile动态生成，不固定cell group数
 ## 基线、优化与独立复验
 
 1. 保存干净Layout `.lms`/`.fsp`，审计几何、端口、cell groups、模式、mesh和波长。
-2. 获得授权后运行中心波长基线；EME先完成cell eigenmode solve，再propagate并提取原生S矩阵。
+2. 在任务范围内按需运行中心波长基线。EME先完成cell eigenmode solve，再propagate并提取原生S矩阵。
 3. 检查目标模式透射、串扰、反射、能量闭合、passivity和reciprocity，确认S元素映射正确。
 4. 使用用户确认的变量与范围执行显式扫描或原生Optimization；不要默认只扫 `R_min/R_max`。
 5. 每个候选保存参数、几何审计、模式映射、FOM和状态；模式识别或求解器异常必须停止，不能作为低FOM继续。
@@ -150,13 +150,13 @@ FOM优先在明确的线性功率域定义，可组合目标模式透射、串�
 ### 监视器与内存边界
 
 - 若只需端口透射光谱，完整XY电场DFT monitor属于可取消的高内存诊断输出；保留必要的原生port结果。稀疏采样的index截面可单独用于材料审计，不能把index monitor称为XY电场监视器，也不能将两者的内存代价混为一谈。删改monitor后保存新的Layout/pre-run，并重新估算内存。
-- 对每组 `R_min`、buffer、`dx/dy/dz` 和monitor配置保存独立的精确候选FSP及SHA256，独立重开后运行 `runsystemcheck("FDTD","GPU")` 读取GPU最大估计，并用 `runsystemcheck("FDTD","CPU")` 读取主机初始化/划网格及运行阶段估计；后者是GPU求解前的**主机内存预检**，不意味着改用CPU求解。记录检查时的空闲主机RAM、空闲GPU显存、各阶段估计值、余量和检查器警告；主机门禁使用相关阶段的较高估计。采用项目预先确定的安全裕量，例如主机和GPU估计均低于各自当时可用内存的90%；裕量随机器负载和风险要求调整，不将90%当成物理定律。
+- 对计划实际运行或作为正式比较依据的 `R_min`、buffer、`dx/dy/dz` 和monitor配置，在一致的工作配置上运行 `runsystemcheck("FDTD","GPU")` 和 `runsystemcheck("FDTD","CPU")`。后者用于估算GPU求解前的主机初始化和划网格内存。记录当时可用主机RAM、GPU显存、各阶段估计值和警告，用相关阶段的较高值核对项目预定余量。正式结果保留对应的pre-run与SHA-256，磁盘配置存疑时重开核查。
 - 主机RAM与GPU显存任一门禁失败、估计警告显著或余量极小，都不要把候选标为可稳妥运行；不自动改粗mesh、缩buffer或切CPU。通过预检只说明该离散候选在该时刻**估计**满足门禁，不能保证实际峰值、求解成功或mesh收敛。尤其靠近主机RAM上限时，conformal mesh的CPU估计可能偏差较大。
 - 问“mesh能划到多小”时，按固定buffer和其余配置扫描有界的离散候选，分别列出最细的已测通过/失败值及安全余量。若只做Layout和system check，标记 `solver_calls=[]`；不能把离散扫描边界写成连续意义上的最小可行步长。改变buffer后必须重新建模、重开、预检，旧内存结果不沿用。
 
 ### 执行与半径对比
 
-- 得到明确运行授权后，先锁定不可变pre-run及其SHA256，从独立working副本在可见 `hide=false` 会话运行指定CPU/GPU资源。只有求解返回、Analysis mode与solver status正确、外部H5/端口数据可读，并且从最终交付位置独立重开成功，才称该点完成。保留p0日志、资源证据、原生port复数S/功率、波长数组和文件哈希。
+- 在任务范围内从独立工作副本使用指定CPU/GPU资源，并保持求解会话可见。该点完成依据为求解状态正确且目标原生数据可读。正式交付从最终位置独立重开，复核FSP及所依赖的H5、原生port复数S/功率和波长数组，保留运行日志、资源证据和哈希。
 - 同一组半径比较应固定工艺、宽度、波段/采样、端口模式、边界、monitor、buffer及局部mesh步长等数值口径；几何包络会随半径自然变化。若内存限制迫使某半径使用不同buffer，图例、逐点CSV和manifest都要标出每点的 `R_min + buffer + dx/dy/dz`，并说明该图是**不同数值配置的结果并列**，不能将差值全归因于半径。单档mesh或仅通过内存门禁不构成收敛。
 - 透射功率先按已核对的port方向/归一化从原生S计算，例如目标模式 `eta=|S_out,in|^2`；反射单独提取。保存逐波长线性效率和 `10*log10(eta)` 负dB双图、同色同采样CSV，并按下文规则保留零值与无效值。
 
@@ -183,18 +183,20 @@ FOM优先在明确的线性功率域定义，可组合目标模式透射、串�
 
 ## 结果归档与清理
 
-在丢弃analysis缓存前保存：
+正式结果按交付范围归档：
 
 - Layout、Optimization和最终Analysis工程。
 - 完整复数S矩阵、功率矩阵、CSV/JSON/NPZ/MAT/HDF5和mode mapping。
 - 几何、曲率、cell、mesh、模式、收敛、passivity、reciprocity和运行日志。
 - 线性/负dB图、必要场图、manifest和文件SHA256。
 
-只有用户明确同意丢弃结果后才调用 `switchtolayout()`。调用前确认可复算数据完整；调用后保存为明确的Layout文件，从新会话重开并验证 `layoutmode`。清理前关闭持有目标文件的会话，清理后 `list_sessions` 必须为空。
+在独立副本上按任务范围执行 `switchtolayout()`，并保存为明确的Layout工程。清除唯一有效Analysis或其外部数据前需要用户授权，且应先验证已保留必要结果。只关闭本任务创建且无需继续使用的会话。
 
 用户确认导出GDS时，从独立最终Layout工程复用 `scripts/export_layout.lsf`，使用亚纳米弦高自适应离散并审计cell、layer/datatype、DBU、bbox、最小特征、顶点数和SHA256；不修改Analysis工程。
 
 ## 验收检查表
+
+按本次交付选择适用项。
 
 - [ ] 已确认弯曲角度、端点/切线、曲率profile、工艺、模式、优化范围和求解器分工。
 - [ ] 没有固定套用某个转角、cell数量、半径组合或模式数。
@@ -207,4 +209,4 @@ FOM优先在明确的线性功率域定义，可组合目标模式透射、串�
 - [ ] 最佳点从干净Layout独立复验；边界最佳已标记。
 - [ ] 完整复数S、功率矩阵、passivity、reciprocity和能量闭合已保存。
 - [ ] 线性与负dB图定义、采样和颜色一致。
-- [ ] 最终工程和外部数据可重开；清理符合授权，MCP会话为空。
+- [ ] 正式结果可从最终位置重开并读取原生数据。清理范围已核对，本任务无需继续使用的会话已关闭。

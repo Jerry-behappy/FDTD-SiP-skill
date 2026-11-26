@@ -2,7 +2,7 @@
 """通过标准输入输出按顺序执行可审计的 PyLumerical MCP scenario。
 
 本脚本是 MCP 客户端，不是求解器封装，也不会导入 ``lumapi``。实际 solver
-调用仍受 Skill 授权和可见 GUI 门禁约束；获准运行时必须在 scenario 中使用
+调用按当前任务范围执行。实际求解在 scenario 中使用
 ``open_session(..., hide=false)``。scenario 可通过 ``code_file`` 载入 ``code``，
 并通过 ``code_context`` 把 JSON 对象注入为 ``CODEX_CONTEXT``。
 

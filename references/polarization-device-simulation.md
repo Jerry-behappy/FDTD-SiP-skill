@@ -22,7 +22,7 @@
 
 - 通过 PyLumerical MCP 控制 Lumerical；先读取 `workflow`、`fdtd_workflow`、`fdtd_sources_monitors`、`fdtd_run_and_results` 和按需的 FDE 指南，再打开会话。
 - PyLumerical MCP 是默认控制入口。只有用户明确授权切换入口时才使用本地 `ansys.lumerical.core`；切换前说明当前入口、能力差异和授权边界，且仍不得直接实例化 `lumapi`。
-- 每个 `run()`、`runsweep()`、`runsetup()`、`switchtolayout()`、删除结果或覆盖工程，均需要对应的明确授权。用户只要求建立 pre-run 文件时，不启动任何求解器。
+- 按[主 skill 的任务范围](../SKILL.md#核心原则)开展工作。pre-run建模可在工作副本上执行 `runsetup()`；求模、运行和扫描仅在仿真任务范围内执行。覆盖用户原件或丢弃唯一结果需要确认。
 - 不在 MCP 代码片段内重新导入或实例化 `lumapi`；以 MCP 已打开的 `fdtd`/`mode` 会话句柄操作。
 - 每个项目独立审计自身 FSP、GDS、层叠、几何、波段、采样、mesh 与端口；不得从 1310 nm/1550 nm 或其他项目照搬器件尺寸、材料、层号或波段。
 - “FDTD Port”仅在确有端口求解需求时使用；此时逐个显式设定 `frequency dependent profile=0`。宽带激励通常使用 mode source 与输出 DFT + mode expansion。
@@ -38,8 +38,8 @@
   -> 原始 expansion 数据 + CSV/图/manifest
 ```
 
-- 原始 FSP/GDS 保存 SHA256；运行前后的 SHA256、创建脚本版本、MCP/引擎信息、波段和采样写入 manifest。
-- pre-run 是唯一不可变的无结果基线。每次求解都从它复制新的 working copy；绝不直接运行、保存覆盖或 `switchtolayout()` 该基线。
+- 正式运行和结果交付记录源文件与交付文件的SHA-256、创建脚本版本、MCP/引擎信息、波段及采样。快速审计按任务记录所查工程和配置。
+- 正式运行从独立working copy启动，保存可重跑的pre-run基线，保护用户原件和唯一结果。
 - 本流程以完成求解的 **working FSP** 为结果真值：它在 Analysis mode 中提供 monitor/expansion 数据。若产生外部 `.h5`，working FSP 与其 `.h5`、引擎日志必须作为不可拆分的一组保存、移动和归档。已有 pre-run 时，不要求额外创建或交付 Analysis FSP。
 - 从 working FSP 提取原生数据、CSV、图和 manifest 后，working copy 不可再用于编辑/重跑；重跑必须从 pre-run 重新复制。这样避免 `switchtolayout()` 丢弃单次结果或新运行覆盖旧结果。
 - 从 GDS 重建时，先审计 TOP cell、DBU、layer/datatype、BOUNDARY/PATH/TEXT、bbox 和层语义。端口标记、文字、轮廓参考层不应自动导入为硅几何。
@@ -95,12 +95,12 @@
 
 ## 5. setup扰动矩阵与替换门禁
 
-1. 对用户指定源文件做只读审计并记录SHA256；建立精确备份和独立candidate，不直接在唯一原件上试改。
-2. 获得 `runsetup()` 授权后，在candidate上依次验证名义值、仅改新变量、仅改旧变量、组合改动。每个状态都读回structure-group子对象顶点、输出直波导、FDTD、source、DFT/expansion、场monitor、BOX/top cladding和mesh的实际全局坐标。
+1. 对用户指定源文件做只读审计，在独立candidate上验证改动。正式替换或交付时记录源文件SHA-256，保留可恢复的基线。
+2. 在建模任务范围内，用 `runsetup()` 对candidate验证名义值、仅改新变量、仅改旧变量和组合改动。每个状态读回structure-group子对象顶点，以及依赖该变量的端口、监视器、边界、包层和mesh坐标。
 3. “仅改新变量”必须只影响目标taper及其真实下游依赖；“仅改旧变量”必须保持已拆出的目标taper不变；组合改动应同时且独立生效。长度变量单独验证横向联动，宽度变量单独验证纵向中心线联动。
 4. 验证taper端面与直波导无缝、monitor处截面均匀、两条输出均穿过PML、包层完整覆盖，且名义状态与修改前几何在项目容差内一致。
-5. 恢复名义参数后保存candidate，关闭并在独立会话重开复核。只有用户明确授权覆盖目标文件时，才替换目标；替换后再次重开并记录SHA256与参数/坐标读回。
-6. manifest分别记录 `runsetup_used`、`switchtolayout_called`、`solver_run`、`runsweep_called` 和 `findmodes_called`。`runsetup()`不等于求解器运行；没有授权不得调用。磁盘文件重开后若已是Layout，不因旧截图显示Analysis而调用 `switchtolayout()`。
+5. 恢复名义参数并保存candidate。正式交付或替换时，从最终位置独立重开核对参数与坐标。覆盖用户原件须已有对应授权。
+6. 需要manifest时分别记录 `runsetup_used`、`switchtolayout_called`、`solver_run`、`runsweep_called` 和 `findmodes_called`。以当前工程模式判断是否需要 `switchtolayout()`。
 7. 进程存在不构成本任务求解证据。按命令行、工作目录和FSP路径识别进程归属；绝不终止、修改或复用其他任务的solver进程。
 8. 用户在GUI中手工修改并保存group变量、setup script、对象名或monitor位置后，之前的SHA、坐标、绑定和Optimization路径审计全部视为过期；从最新磁盘文件重新建立基线和差异。目标FSP仍在用户GUI中打开时不自动覆盖保存，改用fresh副本或等待用户关闭。
 
@@ -111,7 +111,7 @@
 - 局部 mesh 的 bbox、步长、优先级、覆盖对象和预期物理目的写入 manifest。删除、移动或降精度局部 mesh 后，重新做显存评估。
 - 正式 3D GPU FDTD 前：保存并关闭 pre-run，独立重开并审计空结果、几何、source/monitor、网格和资源；再调用 `runsystemcheck("FDTD","GPU")` 并读取当前空闲显存。
 - 显存不满足时停止并报告估算依据。只有用户授权后，才按“先降低全局精度、保留关键区局部 20–40 nm mesh、重新估算”的顺序调整；不得静默转 CPU 或降低关键区精度。
-- 所有实际求解使用可见GUI会话（例如 `open_session(..., hide=False)`），并保持 `LUMERICAL_HIDE_GUI=0`；每次仅运行一个FDTD会话以避免GPU显存竞争。
+- 实际求解使用可见GUI会话（例如 `open_session(..., hide=False)`），打开或切换会话时确认。根据实际资源预算安排FDTD求解并发，避免GPU显存竞争。
 - 对长器件、强反射或曾发生空 expansion 的工程，正式网格前先做一次**不保存**的时间窗口验证：临时移除 local mesh、设较低全局 mesh accuracy，并在各目标输出直波导放小型 point time monitor。经运行授权后确认脉冲到达输出、传播延迟合理且未在到达前停止；再把正式 `simulation time` 写回实际 FDTD 对象。该低成本验证不替代正式仿真，也不保存为 pre-run/working 文件。
 
 ## 7. 物理 TE0/TM0 预检与端口方向
@@ -151,7 +151,7 @@ fdtd.setexpansion(expansion_name, dft_name)
 ## 9. 偏振器件原生Optimization
 
 1. 从已通过第5节setup扰动矩阵的不可变pre-run建立优化模板；参数路径必须指向真实structure-group属性，参数范围、单位、制造约束和名义值来自用户或当前工程审计，不从其他波段工程继承。
-2. 每个candidate先应用变量并执行获授权的setup，再检查几何有效性、变量隔离、taper/直波导连续性、PML穿越、monitor均匀截面、FDTD与包层覆盖。门禁失败的candidate记录失败原因，不启动solver。
+2. 每个candidate应用变量并刷新setup，检查几何有效性、变量隔离、taper/直波导连续性、PML穿越、monitor均匀截面、FDTD与包层覆盖。无效候选记录原因并跳过求解。
 3. 每个输入偏振使用独立source-specific working copy，且仅启用一个真实输入source；输出DFT与expansion按第8节映射。实际求解必须使用可见会话，并保留candidate参数、FSP、日志和原生结果。
 4. FOM在归一化线性功率域定义，明确目标端口/模式、带宽聚合、惩罚项、权重和约束；正损耗或负dB只用于报告，不在未说明时混入FOM。验收阈值与优化目标分开记录。
 5. 使用Lumerical原生Optimization时，读回optimizer对象的实际parameter path、范围、算法、generation、population、FOM绑定和状态；配置存在不等于某一代已完成。
@@ -161,7 +161,7 @@ fdtd.setexpansion(expansion_name, dft_name)
 9. 对GPU Optimization，将每个candidate视为不可拆分结果包：`candidate.fsp`、成功的`candidate_p0.log`和相邻同名目录中的`candidate/candidate_output.h5`。仅当三者存在、H5非空且名称对应时增加完成计数；不得按FSP数量、p0日志数量或solver退出码单独判定。轮询先检查确定性同名路径，只在缺失或名称异常时读取FSP二进制中的相对H5引用。
    - 新项目优先直接调用 `scripts/audit_native_optimization.py` 做代际filesystem门禁，调用 `scripts/audit_lumerical_result_bundle.py` 检查单个candidate/best结果包；不要重新复制项目专用watcher中的计数逻辑。
 10. `resave files after analysis=1` 只表示analysis后重新保存candidate FSP，不会把GPU monitor数据嵌入FSP，也不能替代H5完整性检查。禁止在结果归档前调用`switchtolayout()`；切回Layout并保存会删除外部GPU结果。
-11. 原生 `*_best_solution.fsp` 通常是candidate FSP的复制品，内部仍可能引用该candidate的相对H5路径。每次全局最佳变化后立即解析该引用，在best-solution FSP所在目录补齐完全相同的相对sidecar目录，同时向稳定归档位置原子复制“best FSP + sidecar目录”。记录原candidate、相对路径、字节数和FSP/H5 SHA256；目标已存在但SHA不符时停止，不覆盖。
+11. 原生 `*_best_solution.fsp` 可能引用candidate的相对H5路径。最佳点变化时记录candidate和引用路径，保留仍被引用的文件。清理相关目录前或正式交付时，将best FSP与准确相对路径下的H5原子归档，校验大小和SHA-256。
     - 优先使用 `scripts/preserve_lumerical_result_bundle.py` 创建不可覆盖的原子归档，并用 `scripts/audit_lumerical_result_bundle.py --strict` 复核；不得只复制best FSP。
 12. 在删除旧generation目录、暂停清理或移动best FSP前，先完成第11步。若被引用的candidate sidecar已经丢失，不能靠重新保存旧FSP、重算mode expansion或复制其他candidate H5修复；将其标记为不可恢复结果包并保留故障路径证据。
 13. 只有一代的全部candidate结果包通过第9步、结果数量正确且汇总原子写入后，才能更新该代最佳与全局最佳。部分代、失败重试、空结果或缺sidecar candidate不得覆盖最近完整代的最佳值。原生history尚未落盘时，只能对p0成功且sidecar完整的稳定candidate做无run、无save只读诊断，并标记为 `partial-generation diagnostic`。
@@ -172,10 +172,10 @@ fdtd.setexpansion(expansion_name, dft_name)
 
 1. 复制 source-specific working copy，设置唯一 source 启用、其余 source 禁用；核验没有输入 DFT，输出 DFT 与激活 expansion 均启用且已绑定。所有 source 使用器件真实输入端的 Forward 方向。
 2. 核对波长范围、采样点数、PML、FDTD span、mesh、source 方向与 FDE 预检记录。波段和点数由本项目需求决定，不从 1550 nm 项目继承到 1310 nm 项目。
-3. 保存并关闭 working copy，独立重开后完成空结果、几何、source/monitor、mesh 审计，再调用 `runsystemcheck("FDTD","GPU")`。通过后顺序执行 GPU FDTD；一次仅允许一个可见 FDTD 会话。
+3. 在working copy核对几何、source/monitor和mesh。指定GPU时对同一配置调用 `runsystemcheck("FDTD","GPU")`，并核对可用显存。磁盘配置或工作副本状态存疑时保存并独立重开确认。
 4. 仅 `run()` 返回、working 会话进入 Analysis mode，且能读到实际结果时才算成功。立即从该 working FSP 导出原生 expansion 数据；无需另存 Analysis FSP。
 5. 失败、空结果、频点数不符、异常 auto-shutoff、GPU 资源错误或模式结果不完整时，立即停止后续批次，并保留 working copy、其 `.h5`、引擎日志、错误文件和已完成数据。
-6. 关闭并重新打开 **working FSP**，再读取 source 状态、对象表、绑定关系、Analysis result 和结果数组，作为运行成功证据；配置成功或进程退出不构成运行证据。
+6. 正式结果从最终位置独立重开 **working FSP**，核验Analysis状态、目标原生结果、点数和有限值，以及所依赖的H5。
 
 宽带 mode expansion 的归一化前向透射率优先使用原生结果中的 `T_forward`（仅在已确认 schema 时使用等义字段）。Lumerical JSON 可能同时含大小写不同的 `n`/`N` 字段；读取原始 JSON 时使用 Python 标准库 `json`，避免大小写字段冲突造成解析失败。
 
@@ -206,7 +206,7 @@ fdtd.setexpansion(expansion_name, dft_name)
 
 - 在一次 build 会话内执行参数最小值、名义值、最大值三态 setup/readback；检查参数约束、polygon 自交、连续性、FDTD/PML 覆盖、source 和输出截面的均匀性、DFT/expansion 绑定与单一启用 source。
 - 将独立重开审计缩减为一次最终 Layout readback；不要对同一三态重复做第二轮重开 setup。运行后只做一次结果 schema、点数、有限值、H5 和 SHA-256 核验。
-- 未获 `runsetup()` 授权时，不把三态审计替换成求解器运行；只报告可从现有 Layout 直接读到的配置和几何。
+- 纯只读审计报告当前Layout的配置和几何。需要验证参数联动时，在建模范围内用独立副本执行 `runsetup()`。
 
 ### 12.3 原生 Sweep 的结果交接
 
@@ -230,6 +230,8 @@ fdtd.setexpansion(expansion_name, dft_name)
 
 ## 13. 交付检查表
 
+按本次交付选择适用项。
+
 - [ ] 原始输入与 pre-run 基线 SHA256 未被运行副本改变。
 - [ ] 优化变量指向真实structure-group属性；共享变量已按物理语义拆分，名义/单变量/组合扰动矩阵通过且名义几何不变。
 - [ ] 顶层controller无同名shadow参数；FDTD、monitor、场monitor、包层和PML外延只按真实依赖联动并已读回。
@@ -242,4 +244,4 @@ fdtd.setexpansion(expansion_name, dft_name)
 - [ ] GPU Optimization的每个完成candidate均通过“FSP + p0成功日志 + 非空同名H5”门禁；best-solution的准确相对sidecar已在清理前捆绑归档并校验SHA256。
 - [ ] 原生Optimization仅启动一次且拥有会话保持到history/result提取完成；pilot与正式mesh使用独立working空间，部分代诊断未覆盖完整代最佳。
 - [ ] 每个数据集波段和采样点数正确；无空结果或未授权降精度/转 CPU。
-- [ ] working FSP、外部 `.h5`、图、CSV、原始数据、日志和 manifest 可作为一组从交付位置独立重开复核；不要求额外 Analysis FSP。
+- [ ] 正式working FSP和所依赖的H5可从交付位置重开，目标原生结果可读。所需图、CSV、原始数据、日志和manifest已随交付保存。

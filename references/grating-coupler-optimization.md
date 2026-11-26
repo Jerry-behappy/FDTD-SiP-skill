@@ -22,8 +22,8 @@
 必须遵守：
 
 - 通过PyLumerical MCP控制Lumerical；先读取 `workflow`、`pic`、`geometry`、`fdtd_workflow`、`fdtd_sources_monitors`、`fdtd_run_and_results` 和按需的 `sweeps` guidelines。
-- 先完成Layout、参数审计、source profile和资源预检，再决定是否运行。
-- 分别获得 `run()`、`runsweep()` 和 `switchtolayout()` 的明确授权；优化授权不自动包含最终3D运行或丢弃结果授权。
+- 按任务选用Layout、参数审计、source profile和资源预检。已有结果的只读分析使用现有工程和原生数据。
+- 求解和扫描遵循[主 skill 的任务范围](../SKILL.md#核心原则)。已要求的2D优化和3D验证可按计划连续完成。新增的高成本验证或丢弃唯一结果需要确认。
 - 不把单独一档mesh结果称为已收敛，不把扫描窗口边界最大值称为真实峰值，不把配置成功称为GPU实际运行成功。
 - 每个MCP阶段核对 `success=true`，并保证没有 `error`、`timed_out` 或意外 `retained`。
 
@@ -118,19 +118,19 @@ Gaussian规则：
 - 将物理角度、Lumerical原生 `angle theta/phi`、注入轴和传播方向同时写入manifest；不能只看角度属性值判断方向。
 - offset统一定义为芯片目标平面的实际落点偏移。空气、top cladding或其他介质分段传播时，用折射关系从落点反算source坐标。
 - 距离或角度研究必须注明固定落点、固定source横坐标或每点重新对光，三种口径不得混用。
-- Gaussian 光源入射光栅耦合器时开启 `frequency dependent profile=1`：宽带仿真中束宽与发散随波长变化，逐频率重新计算空间分布更符合光纤入射。setup、保存、system check 和正式运行前后都回读确认该值为 `1`。若仅中心波长单点运行，该选项无影响，但仍保持 `1` 以统一口径。
+- Gaussian 光源入射光栅耦合器时开启 `frequency dependent profile=1`：宽带仿真中束宽与发散随波长变化，逐频率重新计算空间分布更符合光纤入射。配置后从 Gaussian source 回读确认该值为 `1`，配置改动或重开后按需复核。若仅中心波长单点运行，该选项无影响，但仍保持 `1` 以统一口径。
 
 若使用显式光纤，建立core/cladding/端面和光纤模式源，并将Fresnel反射及端面纳入模型；不再叠加Gaussian source。
 
 ## 基线、对光与原生Optimization
 
-按成本从低到高执行，具体阶段由用户批准的任务计划选择：
+按成本从低到高选择当前任务所需的阶段：
 
 1. 建立确定性Layout基线，记录几何、source、monitor、边界、mesh和波段。
 2. 在中心波长验证传播方向和落点。需要独立对光时，先关闭局部mesh和非必要monitor，做覆盖正负offset的总功率扫描；边界最优则扩展，直到峰值被两侧实测点包围或达到安全边界。
 3. 需要目标模式时，在总功率候选附近做TE0细扫，并用实测点包围峰值，不只依赖拟合。
 4. 若用户选择联合优化，将offset和确认的几何变量一起加入FDTD原生Optimization；不要固定优化period、fill factor或etch depth，除非当前任务确实选择这些变量。
-5. 从干净Layout应用最佳参数并独立运行复验；复验通过后才能进入3D宽带验证。
+5. 交付经复验的优化性能时，从干净Layout应用最佳参数并独立运行。按任务范围安排3D宽带验证，记录各层级的结果和复验状态。
 
 对光扫描先在manifest定义物理offset零点、正方向、source坐标映射、范围、步长和mesh层级。优先采用稀疏粗扫，再在实测最佳点附近细扫；已有有效采样点必须复用，只追加未覆盖点，不因调整步长而从头重跑。用户要求停止或手动关闭后，先审计现存结果和job状态，不自动重启。
 
@@ -141,7 +141,7 @@ Gaussian规则：
 - 线性功率域FOM、传播方向、monitor/result路径及多目标权重。
 - 制造约束证明、停止阈值和边界最优策略。
 
-只在一代完整结束后判断代际停止条件。最佳参数位于范围边界时标记 `boundary-best`，不自动扩大用户确认范围。保存best FOM、best parameters、trend、完整history和Optimization FSP。长任务只在新最佳或阶段切换时给出实质更新；必要心跳保持简短。
+只在一代完整结束后判断代际停止条件。最佳参数位于范围边界时标记 `boundary-best`，不自动扩大用户确认范围。保存best FOM、best parameters、trend、完整history和Optimization FSP。长任务在阶段完成、出现有意义的新最佳、异常或需要用户操作时更新。
 
 原生PSO每个完整generation原子写入快照，至少包含 `completed/expected`、本代最佳、累计最佳、全部参数、派生尺寸、是否触边和距验收目标的差值。部分代不得冒充完整代；停止后最终结构默认取最后一个完整代的全局最佳。验收目标只比较独立复验后的线性效率，不修改FOM。调用 `deletesweep` 前先确认对象实际存在；缺失对象直接跳过，避免把清理warning误报成仿真失败。PSO名称和输出路径保持简短，预先检查自动job文件完整路径，避免Windows路径过长导致保存失败。
 
@@ -165,11 +165,11 @@ Gaussian规则：
 
 GPU门禁：
 
-1. 完成setup、source、monitor、边界和mesh后保存精确pre-run FSP，记录运行前SHA256，关闭会话并独立重开审计。
+1. 在运行工作副本审计setup、source、monitor、边界和mesh。正式结果保留pre-run及其SHA-256。若从磁盘恢复配置、有外部改动或保存状态存疑，独立重开核对。
 2. 将pre-run保存为不可变快照；另建运行工作副本。不要在唯一pre-run快照上调用solver，因为Lumerical可能原地更新当前FSP及同名外部结果目录。
 3. 在运行工作副本执行 `runsystemcheck("FDTD","GPU")`，记录最小/最大显存估算。几何审计后、正式运行前重新读取当前空闲显存；超过计划安全线即停止，不自动降mesh或转CPU。
-4. 正式运行前重新读取对称边界和 `frequency dependent profile=1`，显式选择GPU资源。
-5. 只有 `run("FDTD","GPU")` 返回且会话处于Analysis mode后才保存Analysis FSP。门禁失败、中止、异常或返回Layout mode时不得创建或保留带Analysis语义的FSP。
+4. 正式运行前读回对称边界及 Gaussian source 的 `frequency dependent profile=1`，从可见会话显式选择GPU资源。
+5. 求解返回、工作工程处于Analysis且目标原生数据可读时，保存working FSP及其H5作为结果包。仅在有交付需求时另存Analysis FSP。
 6. 用GPU资源配置、`fdtd-engine`进程、p0日志、显存、auto-shutoff、controller状态和最终Analysis结果共同证明GPU执行；任务管理器单个默认图表不是唯一证据。
 
 ## monitor、结果重开与v251稳定性
@@ -228,11 +228,13 @@ positive_loss_dB = -coupling_dB
 - 导出后审计cell、layer/datatype、BOUNDARY数、DBU、bbox、最小制造特征、顶点数、弦高目标、字节数和SHA256。
 - 保留Analysis FSP及外部HDF5不动；导出源Layout FSP也要保存SHA256。
 
-最终保留：最终Layout/Analysis FSP、外部HDF5、Optimization与独立复验、轻量扫描/资格JSON、宽带CSV/数组、两张光谱图、GDS、GPU日志和总manifest。
+按交付目标选择保留的文件。正式结果保留working FSP、所依赖的HDF5、目标原生结果和运行依据。按任务补充Layout、优化历史、复验、扫描数据、光谱图、GDS和manifest。
 
-删除前解析绝对路径并确认位于项目根目录内，记录路径、原因、大小和SHA256。永久删除、把唯一Analysis切回Layout或删除其HDF5都需要明确授权。完成后关闭PyLumerical会话，并确认 `list_sessions` 为空。
+删除前解析目标路径并确认位于项目根内。删除依赖目录前先验证保留位置的结果包完整且原生结果可读。永久删除唯一Analysis、有效历史或其H5需要明确授权。只关闭本任务创建且无需继续使用的会话。
 
 ## 交付检查表
+
+按本次交付选择适用项，求解和独立复验项用于对应性能结论。
 
 - [ ] 已确认几何来源、刻蚀类型、周期方向和有序分段；没有套用固定周期模板。
 - [ ] 已确认start boundary、terminal policy、制造约束和派生宽度方程。
@@ -245,9 +247,9 @@ positive_loss_dB = -coupling_dB
 - [ ] grating local mesh与可选source mesh独立审计；用户要求不加source mesh时对象数为0；单档mesh没有被称为收敛。
 - [ ] 精确pre-run FSP已完成GPU system check，GPU执行证据完整。
 - [ ] 不可变pre-run快照、运行工作副本和Analysis保存顺序正确；失败路径不会留下伪Analysis。
-- [ ] Gaussian 光源入射光栅耦合器的 `frequency dependent profile=1` 在正式运行前后均已审计。
+- [ ] Gaussian 光源入射光栅耦合器的 `frequency dependent profile=1` 已从对应光源对象回读。
 - [ ] 原生Transmission先于TE0读取；离线后处理限制已披露。
 - [ ] 线性图和负dB图的波长、采样、曲线和颜色一致。
-- [ ] 最终Analysis FSP与外部HDF5可从交付位置重开。
+- [ ] 正式working FSP和所依赖的HDF5可从交付位置重开，目标原生结果可读。
 - [ ] GDS来自独立Layout FSP，并完成层、几何、弦高和SHA256审计。
-- [ ] 清理manifest完整，最终PyLumerical `list_sessions`为空。
+- [ ] 清理范围已核对。本任务无需继续使用的会话已关闭。

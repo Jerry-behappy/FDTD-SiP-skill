@@ -2,7 +2,7 @@
 
 FDTD-SiP-Simulation 是面向 Ansys Lumerical 2025 R1 的通用硅光子器件仿真技能，覆盖 FDTD、MODE/FDE、EME、varFDTD、参数化结构组、原生 Sweep/Optimization、GDS 重建与结果审计。
 
-本仓库的脚本坚持三个边界：不直接实例化 `lumapi`，不把 `runsetup()` 当作求解，不在没有明确授权时调用 `run()`、`runsweep()`、`emesweep()`、`findmodes()` 或 `switchtolayout()`。
+使用本 skill 时同时使用 PyLumerical MCP，通过 MCP 控制 Lumerical。在任务范围内，Layout 建模可对工作副本执行 `runsetup()`，已授权的仿真可完成所需求模和扫描。超出范围的高成本计算、覆盖用户原件或丢弃唯一有效结果需要确认。
 
 ## 能力范围
 
@@ -153,9 +153,9 @@ emesweep_called = false
 solver_called = false
 ```
 
-真正启动 Sweep/Optimization 必须是后续独立步骤，并再次确认用户授权与可见 `hide=false` Lumerical 窗口。
+实际启动 Sweep/Optimization 由项目 scenario 在已授权的任务范围内执行，使用 `hide=false` 的可见会话。打开或切换会话时确认可见性。
 
-### 5. 先 dry-run，再执行 scenario
+### 5. 校验并执行 scenario
 
 ```powershell
 python -X utf8 scripts\pylumerical_mcp_stdio_runner.py project_scenario.json --dry-run
@@ -166,21 +166,23 @@ python -X utf8 scripts\pylumerical_mcp_stdio_runner.py project_scenario.json --o
 
 ## 可复现仿真闭环
 
+快速 Layout、单点排错和只读结果分析按任务需要选用步骤。下面的完整流程用于正式仿真和可复现结果交付。
+
 1. 记录源 FSP/GDS 的 SHA-256，保持 baseline/pre-run 不可变。
-2. 用 `configure_lumerical_project_via_mcp.py` 创建 fresh Layout working FSP，并对参数最小值、基线值、最大值做 `runsetup()` readback。
+2. 用 `configure_lumerical_project_via_mcp.py` 创建独立 Layout 工作工程，必要时用 `runsetup()` 回读基线和有代表性的参数点。
 3. 用 `configure_native_sweep_via_mcp.py` 配置原生 Sweep/Optimization，但不在配置阶段启动。
-4. 只有获得明确授权后，才从可见 `hide=false` 会话启动实际求解；求解调用应留在项目专用 scenario 中。
-5. 运行结束后立即读取原生 result/history；GPU 结果同时保留 working/best FSP 与其准确相对路径 H5 sidecar。
-6. 用 `audit_lumerical_project_via_mcp.py` 独立重开检查 native result，再生成 manifest。
+4. 在任务范围内从可见 `hide=false` 会话按指定CPU/GPU求解。交付供 GUI Run 的 GPU 工程时核对 GPU 资源已启用。
+5. 读取原生 result/history。空结果或无效数据标为失败。GPU 结果同时保留 working/best FSP 与其依赖的准确相对路径 H5。优化中先记录最佳点和引用，正式交付或清理依赖目录前归档结果包。
+6. 用 `audit_lumerical_project_via_mcp.py` 从最终交付位置独立重开，检查原生数据及其点数、有限值和依赖，再生成适用的 manifest 和 SHA-256。
 
 ## 环境要求
 
 - Windows 与 Python 3.11+；中文路径建议使用 `python -X utf8`
 - Ansys Lumerical 2025 R1 或经过项目验证的兼容版本
 - Codex Desktop 与 PyLumerical MCP
-- 实际求解时使用可见 Lumerical 会话；纯 Layout 建模和只读审计可隐藏运行
+- 实际求解使用可见 Lumerical 会话。纯 Layout 建模和只读审计可隐藏运行。任务结束时只关闭本任务创建且无需继续使用的会话。
 
-## 安全边界
+## 脚本行为与结果保护
 
 - 脚本不使用 `lumapi`/`ansys.lumerical.core`，也不把 PyLumerical MCP 握手当成求解证据。
 - `runsetup()` 只刷新参数化 Layout，不产生 FDTD/FDE/EME/varFDTD 求解结果。
